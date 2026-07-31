@@ -131,7 +131,7 @@ namespace
         return length <= 0.000001f ? fallback : Multiply(value, 1.0f / length);
     }
 
-    Vec3 FromMumble(const Vector3& value)
+    Vec3 FromMumble(const Mumble::Vector3& value)
     {
         return { value.X, value.Y, value.Z };
     }

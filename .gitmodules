@@ -1,0 +1,9 @@
+[submodule "DecoTools/src/nexus"]
+	path = DecoTools/src/nexus
+	url = https://github.com/RaidcoreGG/Nexus-API.git
+[submodule "DecoTools/src/mumble"]
+	path = DecoTools/src/mumble
+	url = https://github.com/RaidcoreGG/RCGG-lib-mumble-api.git
+[submodule "DecoTools/src/imgui"]
+	path = DecoTools/src/imgui
+	url = https://github.com/RaidcoreGG/imgui.git
