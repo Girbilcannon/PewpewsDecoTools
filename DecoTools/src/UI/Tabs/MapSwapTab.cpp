@@ -2,15 +2,10 @@
 
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
+#include "../../Core/Gw2Api.h"
 #include "../DecorationCounterWindow.h"
 #include "../../imgui/imgui.h"
 #include "../../imgui/imgui_internal.h"
-
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <Windows.h>
-#include <winhttp.h>
 
 #include <algorithm>
 #include <cctype>
@@ -23,8 +18,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-
-#pragma comment(lib, "Winhttp.lib")
 
 namespace
 {
@@ -62,12 +55,7 @@ namespace
         std::vector<Prop> props;
     };
 
-    struct Guild
-    {
-        std::string id;
-        std::string name;
-        std::string tag;
-    };
+    using Guild = Gw2Api::Guild;
 
     struct MissingEntry
     {
@@ -695,7 +683,7 @@ namespace
         if (!precheck.ownershipAvailable)
         {
             output << "Ownership counts were not verified.\n";
-            output << "Enter an API key and ensure DecoToolsHelper is running to enable counts.\n\n";
+            output << "Enter a valid API key in Settings to enable counts.\n\n";
         }
         else if (precheck.missing.empty())
         {
@@ -753,287 +741,7 @@ namespace
         }
     }
 
-    std::wstring Utf8ToWide(const std::string& text)
-    {
-        if (text.empty())
-        {
-            return {};
-        }
-        const int count = MultiByteToWideChar(
-            CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
-        if (count <= 0)
-        {
-            return {};
-        }
-        std::wstring output(static_cast<size_t>(count), L'\0');
-        MultiByteToWideChar(
-            CP_UTF8, 0, text.data(), static_cast<int>(text.size()), output.data(), count);
-        return output;
-    }
-
-    std::string HttpRequest(
-        const wchar_t* method,
-        const std::wstring& path,
-        const std::string& body,
-        std::string& error
-    )
-    {
-        HINTERNET session = WinHttpOpen(
-            L"DecoTools/0.0.1.9",
-            WINHTTP_ACCESS_TYPE_NO_PROXY,
-            WINHTTP_NO_PROXY_NAME,
-            WINHTTP_NO_PROXY_BYPASS,
-            0
-        );
-        if (session == nullptr)
-        {
-            error = "Could not initialize the local helper connection.";
-            return {};
-        }
-
-        WinHttpSetTimeouts(session, 2500, 2500, 5000, 8000);
-        HINTERNET connection = WinHttpConnect(
-            session, L"localhost", 61337, 0);
-        HINTERNET request = connection == nullptr
-            ? nullptr
-            : WinHttpOpenRequest(
-                connection,
-                method,
-                path.c_str(),
-                nullptr,
-                WINHTTP_NO_REFERER,
-                WINHTTP_DEFAULT_ACCEPT_TYPES,
-                0
-            );
-
-        bool succeeded = request != nullptr;
-        if (succeeded)
-        {
-            const wchar_t* headers = body.empty()
-                ? WINHTTP_NO_ADDITIONAL_HEADERS
-                : L"Content-Type: application/json\r\n";
-            const DWORD headerLength = body.empty()
-                ? 0
-                : static_cast<DWORD>(-1L);
-            succeeded = WinHttpSendRequest(
-                request,
-                headers,
-                headerLength,
-                body.empty() ? WINHTTP_NO_REQUEST_DATA : const_cast<char*>(body.data()),
-                static_cast<DWORD>(body.size()),
-                static_cast<DWORD>(body.size()),
-                0
-            ) == TRUE;
-        }
-        if (succeeded)
-        {
-            succeeded = WinHttpReceiveResponse(request, nullptr) == TRUE;
-        }
-
-        DWORD statusCode = 0;
-        DWORD statusSize = sizeof(statusCode);
-        if (succeeded)
-        {
-            WinHttpQueryHeaders(
-                request,
-                WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                WINHTTP_HEADER_NAME_BY_INDEX,
-                &statusCode,
-                &statusSize,
-                WINHTTP_NO_HEADER_INDEX
-            );
-        }
-
-        std::string response;
-        while (succeeded)
-        {
-            DWORD available = 0;
-            if (!WinHttpQueryDataAvailable(request, &available) || available == 0)
-            {
-                break;
-            }
-            const size_t oldSize = response.size();
-            response.resize(oldSize + available);
-            DWORD read = 0;
-            if (!WinHttpReadData(
-                request, response.data() + oldSize, available, &read))
-            {
-                succeeded = false;
-                break;
-            }
-            response.resize(oldSize + read);
-        }
-
-        if (request != nullptr) WinHttpCloseHandle(request);
-        if (connection != nullptr) WinHttpCloseHandle(connection);
-        WinHttpCloseHandle(session);
-
-        if (!succeeded)
-        {
-            error = "DecoToolsHelper is not responding on localhost:61337.";
-            return {};
-        }
-        if (statusCode < 200 || statusCode >= 300)
-        {
-            error = "DecoToolsHelper returned HTTP " + std::to_string(statusCode) + ".";
-            return {};
-        }
-        return response;
-    }
-
-    std::string JsonEscape(const std::string& value)
-    {
-        std::string output;
-        for (const char character : value)
-        {
-            switch (character)
-            {
-            case '\\': output += "\\\\"; break;
-            case '"': output += "\\\""; break;
-            case '\n': output += "\\n"; break;
-            case '\r': output += "\\r"; break;
-            case '\t': output += "\\t"; break;
-            default: output += character; break;
-            }
-        }
-        return output;
-    }
-
-    bool SyncApiKey(const std::string& apiKey, std::string& error)
-    {
-        if (apiKey.empty())
-        {
-            error = "Enter an API key in Settings first.";
-            return false;
-        }
-        const std::string body = "{\"apiKey\":\"" + JsonEscape(apiKey) + "\"}";
-        HttpRequest(L"POST", L"/config/apikey", body, error);
-        return error.empty();
-    }
-
-    std::string FindJsonString(
-        const std::string& source,
-        const std::string& key,
-        size_t begin,
-        size_t end
-    )
-    {
-        const std::string token = "\"" + key + "\"";
-        size_t position = source.find(token, begin);
-        if (position == std::string::npos || position >= end)
-        {
-            return {};
-        }
-        position = source.find(':', position + token.size());
-        if (position == std::string::npos || position >= end)
-        {
-            return {};
-        }
-        position = source.find('"', position + 1);
-        if (position == std::string::npos || position >= end)
-        {
-            return {};
-        }
-
-        std::string output;
-        bool escaped = false;
-        for (++position; position < end; ++position)
-        {
-            const char character = source[position];
-            if (escaped)
-            {
-                switch (character)
-                {
-                case 'n': output += '\n'; break;
-                case 'r': output += '\r'; break;
-                case 't': output += '\t'; break;
-                default: output += character; break;
-                }
-                escaped = false;
-            }
-            else if (character == '\\')
-            {
-                escaped = true;
-            }
-            else if (character == '"')
-            {
-                break;
-            }
-            else
-            {
-                output += character;
-            }
-        }
-        return output;
-    }
-
-    std::vector<Guild> ParseGuilds(const std::string& json)
-    {
-        std::vector<Guild> result;
-        size_t position = 0;
-        while (true)
-        {
-            const size_t begin = json.find('{', position);
-            if (begin == std::string::npos)
-            {
-                break;
-            }
-            const size_t end = json.find('}', begin + 1);
-            if (end == std::string::npos)
-            {
-                break;
-            }
-
-            Guild guild;
-            guild.id = FindJsonString(json, "Id", begin, end);
-            if (guild.id.empty()) guild.id = FindJsonString(json, "id", begin, end);
-            guild.name = FindJsonString(json, "Name", begin, end);
-            if (guild.name.empty()) guild.name = FindJsonString(json, "name", begin, end);
-            guild.tag = FindJsonString(json, "Tag", begin, end);
-            if (guild.tag.empty()) guild.tag = FindJsonString(json, "tag", begin, end);
-            if (!guild.id.empty())
-            {
-                result.push_back(std::move(guild));
-            }
-            position = end + 1;
-        }
-        return result;
-    }
-
-    std::map<int, int> ParseCounts(const std::string& json)
-    {
-        std::map<int, int> result;
-        size_t position = 0;
-        while (true)
-        {
-            const size_t keyStart = json.find('"', position);
-            if (keyStart == std::string::npos)
-            {
-                break;
-            }
-            const size_t keyEnd = json.find('"', keyStart + 1);
-            const size_t colon = keyEnd == std::string::npos
-                ? std::string::npos
-                : json.find(':', keyEnd + 1);
-            if (keyEnd == std::string::npos || colon == std::string::npos)
-            {
-                break;
-            }
-            try
-            {
-                const int id = std::stoi(json.substr(keyStart + 1, keyEnd - keyStart - 1));
-                const int count = std::stoi(json.substr(colon + 1));
-                result[id] = count;
-            }
-            catch (...)
-            {
-            }
-            position = colon + 1;
-        }
-        return result;
-    }
-
-    void StartGuildLoad()
+     void StartGuildLoad()
     {
         if (activeJobKind != JobKind::None)
         {
@@ -1050,44 +758,13 @@ namespace
             JobResult result;
             result.kind = JobKind::LoadGuilds;
             result.generation = generation;
-            if (!SyncApiKey(apiKey, result.error))
-            {
-                return result;
-            }
-
-            const std::string json =
-                HttpRequest(L"GET", L"/guilds", {}, result.error);
-            if (!result.error.empty())
-            {
-                return result;
-            }
-
-            result.guilds = ParseGuilds(json);
-            result.success = true;
+            result.success =
+                Gw2Api::LoadGuilds(apiKey, result.guilds, result.error);
             return result;
         });
     }
 
-    std::string BuildIdsJson(const std::map<int, int>& required)
-    {
-        std::ostringstream output;
-        output << "{\"ids\":[";
-        bool first = true;
-        for (const auto& [id, count] : required)
-        {
-            static_cast<void>(count);
-            if (!first)
-            {
-                output << ',';
-            }
-            output << id;
-            first = false;
-        }
-        output << "]}";
-        return output.str();
-    }
-
-    void StartCountLoad()
+     void StartCountLoad()
     {
         if (activeJobKind != JobKind::None)
         {
@@ -1123,31 +800,21 @@ namespace
                 JobResult result;
                 result.kind = JobKind::LoadCounts;
                 result.generation = generation;
-                if (!SyncApiKey(apiKey, result.error))
+                std::vector<int> ids;
+                ids.reserve(required.size());
+                for (const auto& [id, count] : required)
                 {
-                    return result;
+                    static_cast<void>(count);
+                    ids.push_back(id);
                 }
-
-                std::string json;
-                if (destination.type == 0)
-                {
-                    json = HttpRequest(
-                        L"GET", L"/decos/homestead", {}, result.error);
-                }
-                else
-                {
-                    const std::wstring path =
-                        L"/decos/guild/" + Utf8ToWide(guildId);
-                    json = HttpRequest(
-                        L"POST", path, BuildIdsJson(required), result.error);
-                }
-
-                if (!result.error.empty())
-                {
-                    return result;
-                }
-                result.counts = ParseCounts(json);
-                result.success = true;
+                result.success = Gw2Api::LoadCounts(
+                    apiKey,
+                    destination.type,
+                    guildId,
+                    ids,
+                    result.counts,
+                    result.error
+                );
                 return result;
             }
         );

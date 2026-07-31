@@ -1,7 +1,7 @@
 #include "DecorationCounterWindow.h"
 
 #include "../Core/AppSettings.h"
-#include "../Core/HelperApi.h"
+#include "../Core/Gw2Api.h"
 #include "../imgui/imgui.h"
 
 #include <algorithm>
@@ -28,7 +28,7 @@ namespace
         unsigned generation = 0;
         bool success = false;
         std::string error;
-        std::vector<HelperApi::Guild> guilds;
+        std::vector<Gw2Api::Guild> guilds;
         std::map<int, int> counts;
     };
 
@@ -39,7 +39,7 @@ namespace
     bool availabilityKnown = false;
     std::string selectedGuildId;
     int selectedGuildIndex = -1;
-    std::vector<HelperApi::Guild> guilds;
+    std::vector<Gw2Api::Guild> guilds;
     std::string status = "Load an XML to view decoration counts.";
     std::future<JobResult> job;
     JobKind jobKind = JobKind::None;
@@ -82,7 +82,7 @@ namespace
                 JobResult result;
                 result.kind = JobKind::Counts;
                 result.generation = currentGeneration;
-                result.success = HelperApi::LoadCounts(
+                result.success = Gw2Api::LoadCounts(
                     apiKey, type, guildId, ids, result.counts, result.error);
                 return result;
             });
@@ -106,7 +106,7 @@ namespace
             result.kind = JobKind::Guilds;
             result.generation = currentGeneration;
             result.success =
-                HelperApi::LoadGuilds(apiKey, result.guilds, result.error);
+                Gw2Api::LoadGuilds(apiKey, result.guilds, result.error);
             return result;
         });
     }

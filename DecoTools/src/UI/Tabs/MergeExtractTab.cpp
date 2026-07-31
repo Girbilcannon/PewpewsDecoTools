@@ -185,6 +185,22 @@ namespace
         return std::string::npos;
     }
 
+    bool IsSelfClosingTag(
+        const std::string& source,
+        size_t tagStart,
+        size_t tagEnd
+    )
+    {
+        if (tagEnd <= tagStart || tagEnd > source.size()) return false;
+        size_t position = tagEnd;
+        while (position > tagStart &&
+            std::isspace(static_cast<unsigned char>(source[position - 1])) != 0)
+        {
+            --position;
+        }
+        return position > tagStart && source[position - 1] == '/';
+    }
+
     bool ReadAttribute(
         const std::string& source,
         size_t tagStart,
@@ -278,7 +294,21 @@ namespace
             }
             Prop prop;
             prop.start = propStart;
-            prop.end = propEnd + 1;
+            if (IsSelfClosingTag(document.source, propStart, propEnd))
+            {
+                prop.end = propEnd + 1;
+            }
+            else
+            {
+                const size_t propClose = document.source.find("</prop>", propEnd + 1);
+                if (propClose == std::string::npos || propClose >= rootClose)
+                {
+                    error = document.fileName +
+                        " contains a prop element without a closing </prop> tag.";
+                    return false;
+                }
+                prop.end = propClose + sizeof("</prop>") - 1;
+            }
             std::string idText;
             if (ReadAttribute(document.source, propStart, propEnd, "id", idText))
             {
@@ -289,7 +319,7 @@ namespace
                 DecorationDatabase::FindNameById(prop.id, document.type);
             prop.name = name == nullptr ? "Unknown Decoration" : name;
             document.props.push_back(std::move(prop));
-            search = propEnd + 1;
+            search = document.props.back().end;
         }
         return true;
     }

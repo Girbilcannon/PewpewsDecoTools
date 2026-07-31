@@ -399,3 +399,35 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+
+# ------------------------------------------------------------
+# DecoTools local and generated data
+# ------------------------------------------------------------
+
+DecoTools.json
+decorations.db.json
+
+# Local XML working files and exported reports
+/Exports/
+/TestXML/
+/Documents/
+/Working/
+/Patches/
+
+# Packaged builds and drop-in patches
+*.zip
+
+# Generated decoration exports
+*_MOVED*.xml
+*_SWAPPED*.xml
+*_MERGED*.xml
+*_EXTRACTED*.xml
+*_STRIPPED*.xml
+
+# Local count exports
+DecorationCount*.txt
+
+# Windows clutter
+Thumbs.db
+Desktop.ini

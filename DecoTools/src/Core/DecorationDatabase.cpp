@@ -1455,7 +1455,7 @@ namespace
         file << "{\n";
         file << "  \"Version\": 1,\n";
         file << "  \"GeneratedAtUtc\": \"2026-07-30T00:00:00Z\",\n";
-        file << "  \"GeneratedBy\": \"Pewpew's Deco Tools 0.0.1.9 built-in seed\",\n";
+        file << "  \"GeneratedBy\": \"Pewpew's Deco Tools 0.0.1.11 built-in seed\",\n";
         file << "  \"SourceSnapshot\": {\n";
         file << "    \"GuildUpgradeIds\": [";
         size_t written = 0;

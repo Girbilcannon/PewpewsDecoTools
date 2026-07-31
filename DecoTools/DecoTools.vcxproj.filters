@@ -52,7 +52,7 @@
     <ClCompile Include="src\Core\DecorationDatabase.cpp">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
-    <ClCompile Include="src\Core\HelperApi.cpp">
+    <ClCompile Include="src\Core\Gw2Api.cpp">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
     <ClCompile Include="src\Entry.cpp">
@@ -88,6 +88,9 @@
     <ClCompile Include="src\UI\Tabs\SettingsTab.cpp">
       <Filter>Source Files\UI\Tabs</Filter>
     </ClCompile>
+    <ClCompile Include="src\Core\HelperApi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\resource.h">
@@ -102,7 +105,7 @@
     <ClInclude Include="src\Core\DecorationDatabase.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
-    <ClInclude Include="src\Core\HelperApi.h">
+    <ClInclude Include="src\Core\Gw2Api.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
     <ClInclude Include="src\imgui\imconfig.h">
@@ -146,6 +149,9 @@
     </ClInclude>
     <ClInclude Include="src\UI\Tabs\SettingsTab.h">
       <Filter>Header Files\UI\Tabs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Core\HelperApi.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
