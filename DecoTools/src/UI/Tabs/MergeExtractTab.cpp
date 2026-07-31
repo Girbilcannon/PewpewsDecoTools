@@ -2,6 +2,7 @@
 
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
+#include "../../Core/Utf8Paths.h"
 #include "../../imgui/imgui.h"
 #include "../../imgui/imgui_internal.h"
 #include "../DecorationCounterWindow.h"
@@ -144,7 +145,10 @@ namespace
             if (iterator->is_regular_file(error) && HasXmlExtension(iterator->path()))
             {
                 availableXmlFiles.push_back(
-                    { iterator->path().filename().string(), iterator->path().string() });
+                    {
+                        Utf8Paths::ToUtf8(iterator->path().filename()),
+                        Utf8Paths::ToUtf8(iterator->path())
+                    });
             }
         }
         std::sort(availableXmlFiles.begin(), availableXmlFiles.end(),
@@ -244,10 +248,12 @@ namespace
 
     bool LoadXml(const std::string& path, XmlDocument& document, std::string& error)
     {
-        std::ifstream file(path, std::ios::binary);
+        const std::filesystem::path nativePath = Utf8Paths::FromUtf8(path);
+        std::ifstream file(nativePath, std::ios::binary);
         if (!file.is_open())
         {
-            error = "Could not open " + std::filesystem::path(path).filename().string() + ".";
+            error = "Could not open " +
+                Utf8Paths::ToUtf8(nativePath.filename()) + ".";
             return false;
         }
         std::ostringstream contents;
@@ -255,7 +261,7 @@ namespace
         document = XmlDocument{};
         document.source = contents.str();
         document.path = path;
-        document.fileName = std::filesystem::path(path).filename().string();
+        document.fileName = Utf8Paths::ToUtf8(nativePath.filename());
 
         const size_t rootStart = document.source.find("<Decorations");
         const size_t rootEnd = rootStart == std::string::npos
@@ -350,7 +356,7 @@ namespace
 
     std::string Stem(const std::string& fileName)
     {
-        return std::filesystem::path(fileName).stem().string();
+        return Utf8Paths::ToUtf8(Utf8Paths::FromUtf8(fileName).stem());
     }
 
     std::filesystem::path IndexedPath(
@@ -360,10 +366,13 @@ namespace
     )
     {
         std::error_code error;
-        std::filesystem::path output = folder / (stem + suffix + "1.xml");
+        std::filesystem::path output = folder /
+            Utf8Paths::FromUtf8(stem + suffix + "1.xml");
         for (int index = 2; std::filesystem::exists(output, error); ++index)
         {
-            output = folder / (stem + suffix + std::to_string(index) + ".xml");
+            output = folder / Utf8Paths::FromUtf8(
+                stem + suffix + std::to_string(index) + ".xml"
+            );
         }
         return output;
     }
@@ -377,13 +386,15 @@ namespace
         std::ofstream file(output, std::ios::binary | std::ios::trunc);
         if (!file.is_open())
         {
-            error = "Could not create " + output.filename().string() + ".";
+            error = "Could not create " +
+                Utf8Paths::ToUtf8(output.filename()) + ".";
             return false;
         }
         file.write(contents.data(), static_cast<std::streamsize>(contents.size()));
         if (!file.good())
         {
-            error = "Could not finish writing " + output.filename().string() + ".";
+            error = "Could not finish writing " +
+                Utf8Paths::ToUtf8(output.filename()) + ".";
             return false;
         }
         return true;
@@ -519,13 +530,14 @@ namespace
             base.source.substr(0, base.rootCloseStart) +
             addition.str() +
             base.source.substr(base.rootCloseStart);
-        const std::filesystem::path folder = std::filesystem::path(base.path).parent_path();
+        const std::filesystem::path folder =
+            Utf8Paths::FromUtf8(base.path).parent_path();
         const std::filesystem::path output =
             IndexedPath(folder, Stem(base.fileName), "_MERGED");
         std::string error;
         if (WriteFile(output, merged, error))
         {
-            status = "Exported " + output.filename().string() + ".";
+            status = "Exported " + Utf8Paths::ToUtf8(output.filename()) + ".";
         }
         else
         {
@@ -636,7 +648,7 @@ namespace
         }
 
         const std::filesystem::path folder =
-            std::filesystem::path(extractDocument.path).parent_path();
+            Utf8Paths::FromUtf8(extractDocument.path).parent_path();
         std::string stripped = extractDocument.source;
         std::vector<const Group*> descending = selected;
         std::sort(descending.begin(), descending.end(),
@@ -683,7 +695,8 @@ namespace
             ++exported;
         }
         status = "Exported " + std::to_string(exported) +
-            " group file(s) and " + strippedPath.filename().string() + ".";
+            " group file(s) and " +
+            Utf8Paths::ToUtf8(strippedPath.filename()) + ".";
     }
 
     void RenderFolderChoice()
@@ -714,12 +727,14 @@ namespace
             for (size_t index = 0; index < availableXmlFiles.size(); ++index)
             {
                 const bool selected = selectedIndex == static_cast<int>(index);
+                ImGui::PushID(static_cast<int>(index));
                 if (ImGui::Selectable(availableXmlFiles[index].name.c_str(), selected))
                 {
                     selectedIndex = static_cast<int>(index);
                     ClearLoaded();
                 }
                 if (selected) ImGui::SetItemDefaultFocus();
+                ImGui::PopID();
             }
             ImGui::EndCombo();
         }

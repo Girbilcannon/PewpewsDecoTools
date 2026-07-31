@@ -12,6 +12,8 @@ namespace AppRuntime
 
     AddonAPI_t* GetApi();
     Mumble::Data* GetMumble();
+    Mumble::Identity* GetMumbleIdentity();
+    void SetMumbleIdentity(Mumble::Identity* identity);
     const std::string& GetAddonDirectory();
 
     bool BrowseForFolder(const char* title, const std::string& initialFolder, std::string& selectedFolder);

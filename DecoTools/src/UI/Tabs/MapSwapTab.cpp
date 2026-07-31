@@ -3,6 +3,7 @@
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
 #include "../../Core/Gw2Api.h"
+#include "../../Core/Utf8Paths.h"
 #include "../DecorationCounterWindow.h"
 #include "../../imgui/imgui.h"
 #include "../../imgui/imgui_internal.h"
@@ -211,7 +212,10 @@ namespace
             if (entry.is_regular_file(error) && !error && HasXmlExtension(entry.path()))
             {
                 availableXmlFiles.push_back(
-                    { entry.path().filename().string(), entry.path().string() }
+                    {
+                        Utf8Paths::ToUtf8(entry.path().filename()),
+                        Utf8Paths::ToUtf8(entry.path())
+                    }
                 );
             }
         }
@@ -481,7 +485,7 @@ namespace
 
     bool ImportXml(const std::string& path)
     {
-        std::ifstream file(path, std::ios::binary);
+        std::ifstream file(Utf8Paths::FromUtf8(path), std::ios::binary);
         if (!file.is_open())
         {
             status = "Could not open the selected XML file.";
@@ -493,7 +497,9 @@ namespace
         ImportedXml parsed;
         parsed.source = contents.str();
         parsed.path = path;
-        parsed.fileName = std::filesystem::path(path).filename().string();
+        parsed.fileName = Utf8Paths::ToUtf8(
+            Utf8Paths::FromUtf8(path).filename()
+        );
 
         const size_t rootStart = parsed.source.find("<Decorations");
         const size_t rootEnd = rootStart == std::string::npos
@@ -1091,15 +1097,18 @@ namespace
         }
 
         const std::string baseName =
-            std::filesystem::path(imported.fileName).stem().string();
+            Utf8Paths::ToUtf8(Utf8Paths::FromUtf8(imported.fileName).stem());
         const std::string suffix = "_" + DestinationSuffix(destination.mapName);
         std::filesystem::path outputPath =
-            destinationFolder / (baseName + suffix + ".xml");
+            destinationFolder /
+            Utf8Paths::FromUtf8(baseName + suffix + ".xml");
         int index = 2;
         while (std::filesystem::exists(outputPath, error) && !error)
         {
             outputPath = destinationFolder /
-                (baseName + suffix + "_" + std::to_string(index++) + ".xml");
+                Utf8Paths::FromUtf8(
+                    baseName + suffix + "_" + std::to_string(index++) + ".xml"
+                );
         }
 
         std::ofstream file(outputPath, std::ios::binary | std::ios::trunc);
@@ -1122,14 +1131,14 @@ namespace
         addition << "Updated IDs: " << updatedIds << "\n";
         addition << "Removed (no counterpart): " << removedNoCounterpart << "\n";
         addition << "Removed (missing ownership): " << removedMissing << "\n";
-        addition << "Saved: " << outputPath.filename().string() << "\n";
+        addition << "Saved: " << Utf8Paths::ToUtf8(outputPath.filename()) << "\n";
         report += addition.str();
 
         if (selectedFolderType == destination.type)
         {
             RefreshXmlList();
         }
-        status = "Exported " + outputPath.filename().string() + ".";
+        status = "Exported " + Utf8Paths::ToUtf8(outputPath.filename()) + ".";
     }
 }
 
@@ -1172,6 +1181,7 @@ void MapSwapTab::Render()
         for (size_t index = 0; index < availableXmlFiles.size(); ++index)
         {
             const bool selected = selectedXmlIndex == static_cast<int>(index);
+            ImGui::PushID(static_cast<int>(index));
             if (ImGui::Selectable(availableXmlFiles[index].name.c_str(), selected))
             {
                 selectedXmlIndex = static_cast<int>(index);
@@ -1180,6 +1190,7 @@ void MapSwapTab::Render()
             {
                 ImGui::SetItemDefaultFocus();
             }
+            ImGui::PopID();
         }
         ImGui::EndCombo();
     }

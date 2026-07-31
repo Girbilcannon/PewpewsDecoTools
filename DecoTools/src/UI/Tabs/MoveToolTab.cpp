@@ -3,6 +3,7 @@
 #include "../../Core/AppRuntime.h"
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
+#include "../../Core/Utf8Paths.h"
 #include "../DecorationCounterWindow.h"
 #include "../../imgui/imgui.h"
 #include "../../imgui/imgui_internal.h"
@@ -24,6 +25,7 @@ namespace
 {
     constexpr float DecorationScale = 0.025400052f;
     constexpr float NearClip = 0.05f;
+    constexpr float DefaultFovRadians = 0.872664626f;
 
     struct Vec3
     {
@@ -61,7 +63,7 @@ namespace
         Vec3 forward;
         Vec3 up;
         Vec3 right;
-        float fovRadians = 65.0f * 0.01745329251994329577f;
+        float fovRadians = DefaultFovRadians;
 
         bool Project(Vec3 world, ImVec2 viewport, ImVec2& screen) const;
     };
@@ -174,6 +176,13 @@ namespace
             Cross(camera.forward, camera.right),
             worldUp
         );
+
+        const Mumble::Identity* identity = AppRuntime::GetMumbleIdentity();
+        if (identity != nullptr && std::isfinite(identity->FOV) &&
+            identity->FOV > 0.1f && identity->FOV < 3.0f)
+        {
+            camera.fovRadians = identity->FOV;
+        }
         return camera;
     }
 
@@ -449,7 +458,9 @@ namespace
 
     std::string ExportBaseName(const std::string& fileName)
     {
-        std::string baseName = std::filesystem::path(fileName).stem().string();
+        std::string baseName = Utf8Paths::ToUtf8(
+            Utf8Paths::FromUtf8(fileName).stem()
+        );
         std::string upperName = baseName;
         std::transform(
             upperName.begin(),
@@ -619,7 +630,10 @@ namespace
                 HasXmlExtension(entry.path()))
             {
                 availableXmlFiles.push_back(
-                    { entry.path().filename().string(), entry.path().string() }
+                    {
+                        Utf8Paths::ToUtf8(entry.path().filename()),
+                        Utf8Paths::ToUtf8(entry.path())
+                    }
                 );
             }
 
@@ -694,7 +708,7 @@ namespace
 
     bool ImportXml(const std::string& path)
     {
-        std::ifstream file(path, std::ios::binary);
+        std::ifstream file(Utf8Paths::FromUtf8(path), std::ios::binary);
         if (!file.is_open())
         {
             status = "Could not open the selected XML file.";
@@ -802,7 +816,9 @@ namespace
         props = std::move(parsedProps);
         xmlMapId = parsedMapId;
         xmlType = typeText == "0" ? 0 : 1;
-        importedFileName = std::filesystem::path(path).filename().string();
+        importedFileName = Utf8Paths::ToUtf8(
+            Utf8Paths::FromUtf8(path).filename()
+        );
         ComputeAnchor();
 
         std::map<int, DecorationCounterWindow::Requirement> countById;
@@ -913,7 +929,8 @@ namespace
             const std::string candidateName =
                 baseName + "_MOVED" + std::to_string(index) + ".xml";
             const std::filesystem::path candidate =
-                std::filesystem::path(destinationFolder) / candidateName;
+                std::filesystem::path(destinationFolder) /
+                Utf8Paths::FromUtf8(candidateName);
 
             if (!std::filesystem::exists(candidate, error))
             {
@@ -949,7 +966,7 @@ namespace
 
         status =
             "Exported " +
-            selectedFile.filename().string() +
+            Utf8Paths::ToUtf8(selectedFile.filename()) +
             " for " + destinationMap->mapName + ".";
     }
 
@@ -1339,6 +1356,7 @@ void MoveToolTab::Render()
         {
             const bool selected =
                 selectedXmlIndex == static_cast<int>(index);
+            ImGui::PushID(static_cast<int>(index));
             if (ImGui::Selectable(
                 availableXmlFiles[index].name.c_str(),
                 selected
@@ -1350,6 +1368,7 @@ void MoveToolTab::Render()
             {
                 ImGui::SetItemDefaultFocus();
             }
+            ImGui::PopID();
         }
         ImGui::EndCombo();
     }

@@ -18,6 +18,7 @@ namespace
 {
     AddonAPI_t* runtimeApi = nullptr;
     Mumble::Data* mumbleLink = nullptr;
+    Mumble::Identity* mumbleIdentity = nullptr;
     std::string addonDirectory;
 
     std::string ParentFolder(const std::string& path)
@@ -99,6 +100,11 @@ void AppRuntime::Initialize(AddonAPI_t* api)
     mumbleLink = runtimeApi == nullptr
         ? nullptr
         : static_cast<Mumble::Data*>(runtimeApi->DataLink_Get(DL_MUMBLE_LINK));
+    mumbleIdentity = runtimeApi == nullptr
+        ? nullptr
+        : static_cast<Mumble::Identity*>(
+            runtimeApi->DataLink_Get(DL_MUMBLE_LINK_IDENTITY)
+        );
 
     addonDirectory.clear();
     if (runtimeApi != nullptr && runtimeApi->Paths_GetAddonDirectory != nullptr)
@@ -121,6 +127,7 @@ void AppRuntime::Initialize(AddonAPI_t* api)
 
 void AppRuntime::Shutdown()
 {
+    mumbleIdentity = nullptr;
     mumbleLink = nullptr;
     runtimeApi = nullptr;
     addonDirectory.clear();
@@ -134,6 +141,22 @@ AddonAPI_t* AppRuntime::GetApi()
 Mumble::Data* AppRuntime::GetMumble()
 {
     return mumbleLink;
+}
+
+Mumble::Identity* AppRuntime::GetMumbleIdentity()
+{
+    if (mumbleIdentity == nullptr && runtimeApi != nullptr)
+    {
+        mumbleIdentity = static_cast<Mumble::Identity*>(
+            runtimeApi->DataLink_Get(DL_MUMBLE_LINK_IDENTITY)
+        );
+    }
+    return mumbleIdentity;
+}
+
+void AppRuntime::SetMumbleIdentity(Mumble::Identity* identity)
+{
+    mumbleIdentity = identity;
 }
 
 const std::string& AppRuntime::GetAddonDirectory()

@@ -31,6 +31,7 @@ namespace
     void AddonRender();
     void AddonOptions();
     void OnToggleWindows(const char* identifier, bool isRelease);
+    void OnMumbleIdentityUpdated(void* eventArgs);
     UINT AddonWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 }
 
@@ -54,7 +55,7 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef()
     addonDefinition.Version.Major = 0;
     addonDefinition.Version.Minor = 0;
     addonDefinition.Version.Build = 1;
-    addonDefinition.Version.Revision = 11;
+    addonDefinition.Version.Revision = 12;
 
     addonDefinition.Author = "Girbilcannon.8259";
     addonDefinition.Description =
@@ -100,6 +101,10 @@ namespace
             OnToggleWindows,
             ""
         );
+        nexusApi->Events_Subscribe(
+            EV_MUMBLE_IDENTITY_UPDATED,
+            OnMumbleIdentityUpdated
+        );
         nexusApi->QuickAccess_Add(
             QuickAccessIdentifier,
             QuickAccessTextureIdentifier,
@@ -115,7 +120,7 @@ namespace
         nexusApi->Log(
             LOGL_INFO,
             AddonName,
-            "Pewpew's Deco Tools 0.0.1.11 loaded."
+            "Pewpew's Deco Tools 0.0.1.12 loaded."
         );
     }
 
@@ -128,6 +133,10 @@ namespace
 
         nexusApi->QuickAccess_Remove(QuickAccessIdentifier);
         nexusApi->InputBinds_Deregister(ToggleWindowsInputBind);
+        nexusApi->Events_Unsubscribe(
+            EV_MUMBLE_IDENTITY_UPDATED,
+            OnMumbleIdentityUpdated
+        );
 
         MapSwapTab::Shutdown();
         DecorationCounterWindow::Shutdown();
@@ -170,6 +179,16 @@ namespace
         if (!isRelease)
         {
             toggleWindowsRequested.store(true, std::memory_order_release);
+        }
+    }
+
+    void OnMumbleIdentityUpdated(void* eventArgs)
+    {
+        if (eventArgs != nullptr)
+        {
+            AppRuntime::SetMumbleIdentity(
+                static_cast<Mumble::Identity*>(eventArgs)
+            );
         }
     }
 

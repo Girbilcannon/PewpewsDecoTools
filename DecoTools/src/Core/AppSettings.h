@@ -15,9 +15,9 @@ namespace AppSettings
         bool windowVisible = true;
         bool showDecorationCounter = true;
 
-        bool showBoundingBox = true;
+        bool showBoundingBox = false;
         bool showSolidFaces = false;
-        bool showDecorationPoints = false;
+        bool showDecorationPoints = true;
         float boxColor[4] = { 0.18f, 0.65f, 1.0f, 1.0f };
         float faceColor[4] = { 0.18f, 0.65f, 1.0f, 0.18f };
         float pointColor[4] = { 1.0f, 0.72f, 0.16f, 1.0f };

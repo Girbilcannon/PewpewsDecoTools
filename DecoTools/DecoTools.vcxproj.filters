@@ -108,6 +108,9 @@
     <ClInclude Include="src\Core\Gw2Api.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
+    <ClInclude Include="src\Core\Utf8Paths.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
     <ClInclude Include="src\imgui\imconfig.h">
       <Filter>Header Files</Filter>
     </ClInclude>
