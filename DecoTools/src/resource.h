@@ -1,0 +1,3 @@
+#pragma once
+
+#define IDR_DECOTOOLS_QUICKACCESS_ICON 101

@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="DecoTools/DecoTools.vcxproj" Id="aed6b8ed-83f1-4de1-b21e-2ae777a058c7" />
+</Solution>

@@ -1,0 +1,3 @@
+#include "resource.h"
+
+IDR_DECOTOOLS_QUICKACCESS_ICON PNG "Resources\\tray.png"
