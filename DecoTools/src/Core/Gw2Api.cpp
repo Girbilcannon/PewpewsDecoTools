@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Guild Wars 2 API Client
+// Sends authenticated HTTPS requests directly to api.guildwars2.com and parses
+// guild information and decoration availability without an external helper app.
+
 #include "Gw2Api.h"
 
 #ifndef WIN32_LEAN_AND_MEAN

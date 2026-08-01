@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Interactive Layout Move Tool
+// Imports decoration XML layouts, visualizes their bounds and decoration points
+// in-game, supports interactive positioning, and exports relocated layouts.
+
 #include "MoveToolTab.h"
 
 #include "../../Core/AppRuntime.h"

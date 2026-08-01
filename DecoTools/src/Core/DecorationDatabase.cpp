@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Local Decoration Database
+// Provides the built-in decoration catalog, loads or creates decorations.db.json,
+// and resolves decoration names and IDs for XML tools and API count operations.
+
 #include "DecorationDatabase.h"
 
 #include <algorithm>

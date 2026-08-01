@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Decoration Counter Interface
+// Defines decoration requirements and declares the window used to compare an
+// XML layout's required decorations against the player's available inventory.
+
 #pragma once
 
 #include <map>

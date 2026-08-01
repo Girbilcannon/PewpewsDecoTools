@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Main Window
+// Builds the primary ImGui window, manages tab selection and cleanup, renders
+// addon options, and coordinates the separate decoration counter window.
+
 #include "MainWindow.h"
 
 #include "../Core/AppSettings.h"

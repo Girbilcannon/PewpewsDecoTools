@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Runtime Services Interface
+// Declares shared access to the Nexus API, MumbleLink data, addon directory,
+// and native Windows file and folder selection dialogs.
+
 #pragma once
 
 #include <string>

@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Guild Wars 2 API Interface
+// Declares the direct API operations used to load account guild information and
+// available Homestead or Guild Hall decoration counts.
+
 #pragma once
 
 #include <map>

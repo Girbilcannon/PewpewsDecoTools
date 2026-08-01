@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Addon Entry Point
+// Defines the Nexus addon metadata and manages loading, unloading, rendering,
+// input bindings, the quick-access icon, and Windows message forwarding.
+
 #include <Windows.h>
 #include <atomic>
 #include <cstddef>
@@ -52,14 +56,14 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef()
     addonDefinition.APIVersion = NEXUS_API_VERSION;
     addonDefinition.Name = AddonName;
 
-    addonDefinition.Version.Major = 0;
+    addonDefinition.Version.Major = 1;
     addonDefinition.Version.Minor = 0;
-    addonDefinition.Version.Build = 1;
-    addonDefinition.Version.Revision = 12;
+    addonDefinition.Version.Build = 0;
+    addonDefinition.Version.Revision = 1;
 
     addonDefinition.Author = "Girbilcannon.8259";
     addonDefinition.Description =
-        "Updated multi-decoration XML handling tools, migrated directly from GW2DecoTools.com";
+        "Move, Merge, Replicate, and  Map Swap large decoration builds for Homesteads and Guild Halls. Migrated directly from GW2DecoTools.com.";
 
     addonDefinition.Load = AddonLoad;
     addonDefinition.Unload = AddonUnload;

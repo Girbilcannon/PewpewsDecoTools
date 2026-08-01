@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Homestead and Guild Hall Map Converter
+// Imports decoration layouts, converts their map and decoration identifiers,
+// checks destination availability through the GW2 API, and exports converted XML.
+
 #include "MapSwapTab.h"
 
 #include "../../Core/AppSettings.h"

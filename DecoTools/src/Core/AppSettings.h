@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Settings Interface
+// Defines the addon's persistent settings data and declares the functions used
+// to load, access, update, and save those settings.
+
 #pragma once
 
 #include <array>
@@ -21,7 +25,7 @@ namespace AppSettings
         float boxColor[4] = { 0.18f, 0.65f, 1.0f, 1.0f };
         float faceColor[4] = { 0.18f, 0.65f, 1.0f, 0.18f };
         float pointColor[4] = { 1.0f, 0.72f, 0.16f, 1.0f };
-        float pointSize = 5.0f;
+        float pointSize = 2.0f;
     };
 
     void Initialize();

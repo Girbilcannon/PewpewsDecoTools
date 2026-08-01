@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - UTF-8 Filesystem Path Utilities
+// Converts between native filesystem paths and UTF-8 strings so international
+// filenames display and open correctly throughout the addon's XML tools.
+
 #pragma once
 
 #include <filesystem>

@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - XML Merge and Extraction Tool
+// Merges multiple compatible decoration layouts, preserves complete prop elements
+// and nested payload data, and extracts individual groups from merged XML files.
+
 #include "MergeExtractTab.h"
 
 #include "../../Core/AppSettings.h"

@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Settings Storage
+// Loads and saves DecoTools.json, supplies default XML folders, and manages
+// delayed setting writes so frequent UI changes do not constantly access disk.
+
 #include "AppSettings.h"
 
 #include "AppRuntime.h"

@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Settings Tab
+// Provides controls for the GW2 API key, default XML folders, local database
+// behavior, window preferences, and Move Tool visualization settings.
+
 #include "SettingsTab.h"
 
 #include "../../Core/AppSettings.h"

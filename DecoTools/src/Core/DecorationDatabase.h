@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Decoration Database Interface
+// Defines decoration database entries and declares lookup functions for matching
+// decoration names with Homestead and Guild Hall API identifiers.
+
 #pragma once
 
 #include <string>

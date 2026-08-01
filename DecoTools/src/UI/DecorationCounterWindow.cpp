@@ -1,3 +1,7 @@
+// Pewpew's Deco Tools - Decoration Counter Window
+// Loads available decoration counts asynchronously, compares them with the
+// current XML requirements, displays shortages, and exports count reports.
+
 #include "DecorationCounterWindow.h"
 
 #include "../Core/AppSettings.h"
