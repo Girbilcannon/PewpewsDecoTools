@@ -59,7 +59,7 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef()
     addonDefinition.Version.Major = 1;
     addonDefinition.Version.Minor = 0;
     addonDefinition.Version.Build = 0;
-    addonDefinition.Version.Revision = 1;
+    addonDefinition.Version.Revision = 2;
 
     addonDefinition.Author = "Girbilcannon.8259";
     addonDefinition.Description =
@@ -68,6 +68,9 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef()
     addonDefinition.Load = AddonLoad;
     addonDefinition.Unload = AddonUnload;
     addonDefinition.Flags = AF_None;
+    addonDefinition.Provider = UP_GitHub;
+    addonDefinition.UpdateLink =
+        "https://github.com/Girbilcannon/PewpewsDecoTools";
 
     return &addonDefinition;
 }
@@ -124,7 +127,7 @@ namespace
         nexusApi->Log(
             LOGL_INFO,
             AddonName,
-            "Pewpew's Deco Tools 0.0.1.12 loaded."
+            "Pewpew's Deco Tools 1.0.0.2 loaded."
         );
     }
 
