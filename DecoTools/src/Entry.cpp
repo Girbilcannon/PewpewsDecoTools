@@ -16,6 +16,7 @@
 #include "UI/MainWindow.h"
 #include "UI/DecorationCounterWindow.h"
 #include "UI/Tabs/MapSwapTab.h"
+#include "UI/Tabs/MergeExtractTab.h"
 #include "UI/Tabs/MoveToolTab.h"
 
 namespace
@@ -58,8 +59,8 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef()
 
     addonDefinition.Version.Major = 1;
     addonDefinition.Version.Minor = 0;
-    addonDefinition.Version.Build = 0;
-    addonDefinition.Version.Revision = 2;
+    addonDefinition.Version.Build = 1;
+    addonDefinition.Version.Revision = 1;
 
     addonDefinition.Author = "Girbilcannon.8259";
     addonDefinition.Description =
@@ -127,7 +128,7 @@ namespace
         nexusApi->Log(
             LOGL_INFO,
             AddonName,
-            "Pewpew's Deco Tools 1.0.0.2 loaded."
+            "Pewpew's Deco Tools 1.0.1.1 loaded."
         );
     }
 
@@ -174,6 +175,7 @@ namespace
         AppSettings::Update();
         MainWindow::Render();
         MoveToolTab::RenderOverlay();
+        MergeExtractTab::RenderOverlay();
     }
 
     void AddonOptions()
@@ -201,6 +203,10 @@ namespace
 
     UINT AddonWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
     {
+        if (MergeExtractTab::WndProc(window, message, wParam, lParam) == 0)
+        {
+            return 0;
+        }
         return MoveToolTab::WndProc(window, message, wParam, lParam);
     }
 }

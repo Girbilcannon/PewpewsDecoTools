@@ -1,9 +1,10 @@
-// Pewpew's Deco Tools - XML Merge and Extraction Tool
-// Merges multiple compatible decoration layouts, preserves complete prop elements
-// and nested payload data, and extracts individual groups from merged XML files.
+// Pewpew's Deco Tools - XML Merge, Group, and Extraction Tool
+// Merges layouts, interactively groups decoration points while preserving existing
+// group order, safely rewrites source XML, and extracts named groups.
 
 #include "MergeExtractTab.h"
 
+#include "../../Core/AppRuntime.h"
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
 #include "../../Core/Utf8Paths.h"
@@ -12,9 +13,13 @@
 #include "../DecorationCounterWindow.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <cmath>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <sstream>
 #include <string>
@@ -22,6 +27,17 @@
 
 namespace
 {
+    constexpr float DecorationScale = 0.025400052f;
+    constexpr float NearClip = 0.05f;
+    constexpr float DefaultFovRadians = 0.872664626f;
+
+    struct Vec3
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+    };
+
     struct XmlFileEntry
     {
         std::string name;
@@ -34,6 +50,10 @@ namespace
         size_t end = 0;
         int id = -1;
         std::string name;
+        Vec3 position;
+        bool hasPosition = false;
+        int groupIndex = -1;
+        bool selected = false;
     };
 
     struct XmlDocument
@@ -57,18 +77,160 @@ namespace
         bool selected = false;
     };
 
+    struct Camera
+    {
+        Vec3 position;
+        Vec3 forward;
+        Vec3 up;
+        Vec3 right;
+        float fovRadians = DefaultFovRadians;
+
+        bool Project(Vec3 world, ImVec2 viewport, ImVec2& screen) const;
+    };
+
     int operation = 0;
     int selectedFolderType = 0;
     int baseXmlIndex = -1;
     int extractXmlIndex = -1;
+    int groupXmlIndex = -1;
     bool fileListInitialized = false;
     std::vector<XmlFileEntry> availableXmlFiles;
     std::vector<unsigned char> additionalSelected;
     std::vector<XmlDocument> mergeDocuments;
     XmlDocument extractDocument;
     std::vector<Group> extractGroups;
+    XmlDocument groupDocument;
+    std::vector<Group> groups;
+    std::array<char, 128> groupName = {};
+    bool hideGrouped = false;
+    bool marqueeMode = false;
+    bool groupInputCaptured = false;
+    bool groupMouseDown = false;
+    bool groupReleasePending = false;
+    bool groupRightClickPending = false;
+    int hoveredGroupProp = -1;
+    ImVec2 groupMousePosition(0.0f, 0.0f);
+    ImVec2 marqueeStart(0.0f, 0.0f);
+    ImVec2 marqueeEnd(0.0f, 0.0f);
     std::string status = "No XML imported";
     std::string report;
+
+    Vec3 Subtract(Vec3 left, Vec3 right)
+    {
+        return { left.x - right.x, left.y - right.y, left.z - right.z };
+    }
+
+    Vec3 Multiply(Vec3 value, float scale)
+    {
+        return { value.x * scale, value.y * scale, value.z * scale };
+    }
+
+    float Dot(Vec3 left, Vec3 right)
+    {
+        return left.x * right.x + left.y * right.y + left.z * right.z;
+    }
+
+    Vec3 Cross(Vec3 left, Vec3 right)
+    {
+        return
+        {
+            left.y * right.z - left.z * right.y,
+            left.z * right.x - left.x * right.z,
+            left.x * right.y - left.y * right.x
+        };
+    }
+
+    float Length(Vec3 value)
+    {
+        return std::sqrt(Dot(value, value));
+    }
+
+    Vec3 Normalize(Vec3 value, Vec3 fallback)
+    {
+        const float length = Length(value);
+        return length <= 0.000001f ? fallback : Multiply(value, 1.0f / length);
+    }
+
+    Vec3 FromMumble(const Mumble::Vector3& value)
+    {
+        return { value.X, value.Y, value.Z };
+    }
+
+    Vec3 DecorationToWorld(Vec3 decoration)
+    {
+        return
+        {
+            decoration.x * DecorationScale,
+            -decoration.z * DecorationScale,
+            decoration.y * DecorationScale
+        };
+    }
+
+    Camera CameraFromMumble(const Mumble::Data& mumble)
+    {
+        Camera camera;
+        camera.position = FromMumble(mumble.CameraPosition);
+        camera.forward = Normalize(
+            FromMumble(mumble.CameraFront),
+            { 0.0f, 0.0f, 1.0f }
+        );
+        const Vec3 worldUp = { 0.0f, 1.0f, 0.0f };
+        camera.right = Normalize(
+            Cross(worldUp, camera.forward),
+            { 1.0f, 0.0f, 0.0f }
+        );
+        camera.up = Normalize(Cross(camera.forward, camera.right), worldUp);
+
+        const Mumble::Identity* identity = AppRuntime::GetMumbleIdentity();
+        if (identity != nullptr && std::isfinite(identity->FOV) &&
+            identity->FOV > 0.1f && identity->FOV < 3.0f)
+        {
+            camera.fovRadians = identity->FOV;
+        }
+        return camera;
+    }
+
+    bool Camera::Project(Vec3 world, ImVec2 viewport, ImVec2& screen) const
+    {
+        if (viewport.x <= 1.0f || viewport.y <= 1.0f) return false;
+
+        const Vec3 relative = Subtract(world, position);
+        const float cameraX = Dot(relative, right);
+        const float cameraY = Dot(relative, up);
+        const float cameraZ = Dot(relative, forward);
+        if (cameraZ <= NearClip) return false;
+
+        const float focalY =
+            (viewport.y * 0.5f) / std::tan(fovRadians * 0.5f);
+        screen.x = viewport.x * 0.5f + cameraX * focalY / cameraZ;
+        screen.y = viewport.y * 0.5f - cameraY * focalY / cameraZ;
+        return
+            screen.x >= -4000.0f && screen.x <= viewport.x + 4000.0f &&
+            screen.y >= -4000.0f && screen.y <= viewport.y + 4000.0f;
+    }
+
+    bool ParseFloat3(const std::string& value, Vec3& result)
+    {
+        std::istringstream stream(value);
+        if (!(stream >> result.x >> result.y >> result.z)) return false;
+        std::string extra;
+        return !(stream >> extra);
+    }
+
+    std::string Trim(std::string value)
+    {
+        while (!value.empty() &&
+            std::isspace(static_cast<unsigned char>(value.front())) != 0)
+        {
+            value.erase(value.begin());
+        }
+        while (!value.empty() &&
+            std::isspace(static_cast<unsigned char>(value.back())) != 0)
+        {
+            value.pop_back();
+        }
+        return value;
+    }
 
     void RenderSectionHeading(const char* label)
     {
@@ -114,6 +276,16 @@ namespace
         std::vector<XmlDocument>().swap(mergeDocuments);
         extractDocument = XmlDocument{};
         std::vector<Group>().swap(extractGroups);
+        groupDocument = XmlDocument{};
+        std::vector<Group>().swap(groups);
+        groupName.fill('\0');
+        hideGrouped = false;
+        marqueeMode = false;
+        groupInputCaptured = false;
+        groupMouseDown = false;
+        groupReleasePending = false;
+        groupRightClickPending = false;
+        hoveredGroupProp = -1;
         std::string().swap(report);
         DecorationCounterWindow::Clear();
         status = "No XML imported";
@@ -126,6 +298,7 @@ namespace
         additionalSelected.clear();
         baseXmlIndex = -1;
         extractXmlIndex = -1;
+        groupXmlIndex = -1;
         fileListInitialized = true;
 
         const std::string folder = FolderForType(selectedFolderType);
@@ -165,6 +338,7 @@ namespace
         {
             baseXmlIndex = 0;
             extractXmlIndex = 0;
+            groupXmlIndex = 0;
         }
         status = availableXmlFiles.empty()
             ? "No XML files found in the selected folder."
@@ -328,6 +502,17 @@ namespace
             const char* name =
                 DecorationDatabase::FindNameById(prop.id, document.type);
             prop.name = name == nullptr ? "Unknown Decoration" : name;
+            std::string positionText;
+            if (ReadAttribute(
+                document.source,
+                propStart,
+                propEnd,
+                "pos",
+                positionText
+            ))
+            {
+                prop.hasPosition = ParseFloat3(positionText, prop.position);
+            }
             document.props.push_back(std::move(prop));
             search = document.props.back().end;
         }
@@ -402,6 +587,132 @@ namespace
             return false;
         }
         return true;
+    }
+
+    bool ReplaceFileSafely(
+        const std::filesystem::path& output,
+        const std::string& contents,
+        std::string& error
+    )
+    {
+        std::filesystem::path temporary = output;
+        temporary += L".decotools.tmp";
+
+        std::error_code cleanupError;
+        std::filesystem::remove(temporary, cleanupError);
+        if (!WriteFile(temporary, contents, error))
+        {
+            std::filesystem::remove(temporary, cleanupError);
+            return false;
+        }
+
+        if (!MoveFileExW(
+            temporary.c_str(),
+            output.c_str(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+        ))
+        {
+            std::filesystem::remove(temporary, cleanupError);
+            error = "Could not replace " +
+                Utf8Paths::ToUtf8(output.filename()) +
+                ". The original XML was left unchanged.";
+            return false;
+        }
+        return true;
+    }
+
+    std::vector<Group> ParseGroups(XmlDocument& document)
+    {
+        for (Prop& prop : document.props)
+        {
+            prop.groupIndex = -1;
+            prop.selected = false;
+        }
+
+        std::vector<Group> parsed;
+        size_t comment = document.source.find(
+            "<!--", document.rootOpenEnd + 1);
+        while (comment != std::string::npos && comment < document.rootCloseStart)
+        {
+            const size_t commentEnd = document.source.find("-->", comment + 4);
+            if (commentEnd == std::string::npos ||
+                commentEnd >= document.rootCloseStart)
+            {
+                break;
+            }
+            const size_t next = document.source.find("<!--", commentEnd + 3);
+            const size_t groupEnd =
+                next == std::string::npos || next >= document.rootCloseStart
+                ? document.rootCloseStart
+                : next;
+
+            Group group;
+            group.name = Trim(document.source.substr(
+                comment + 4, commentEnd - comment - 4));
+            group.start = comment;
+            group.end = groupEnd;
+
+            const int groupIndex = static_cast<int>(parsed.size());
+            for (Prop& prop : document.props)
+            {
+                if (prop.start > commentEnd && prop.start < groupEnd)
+                {
+                    prop.groupIndex = groupIndex;
+                    group.props.push_back(prop);
+                }
+            }
+
+            if (!group.name.empty())
+            {
+                parsed.push_back(std::move(group));
+            }
+            else
+            {
+                for (Prop& prop : document.props)
+                {
+                    if (prop.groupIndex == groupIndex) prop.groupIndex = -1;
+                }
+            }
+            comment = next;
+        }
+        return parsed;
+    }
+
+    std::string BuildGroupedXml(
+        const XmlDocument& document,
+        const std::vector<Group>& orderedGroups
+    )
+    {
+        const char* newline = document.source.find("\r\n") != std::string::npos
+            ? "\r\n"
+            : "\n";
+        std::ostringstream body;
+        for (const Prop& prop : document.props)
+        {
+            if (prop.groupIndex < 0)
+            {
+                body << newline << "  "
+                    << document.source.substr(prop.start, prop.end - prop.start);
+            }
+        }
+        for (size_t groupIndex = 0; groupIndex < orderedGroups.size(); ++groupIndex)
+        {
+            const Group& group = orderedGroups[groupIndex];
+            body << newline << newline << "  <!--" << group.name << "-->";
+            for (const Prop& prop : document.props)
+            {
+                if (prop.groupIndex == static_cast<int>(groupIndex))
+                {
+                    body << newline << "  "
+                        << document.source.substr(prop.start, prop.end - prop.start);
+                }
+            }
+        }
+        body << newline;
+        return
+            document.source.substr(0, document.rootOpenEnd + 1) +
+            body.str() +
+            document.source.substr(document.rootCloseStart);
     }
 
     void PrepareMerge()
@@ -549,6 +860,171 @@ namespace
         }
     }
 
+    void ClearGroupSelection(bool clearName)
+    {
+        for (Prop& prop : groupDocument.props) prop.selected = false;
+        if (clearName) groupName.fill('\0');
+    }
+
+    bool ReloadGroupDocument(const std::string& path)
+    {
+        XmlDocument reloaded;
+        std::string error;
+        if (!LoadXml(path, reloaded, error))
+        {
+            status = error;
+            return false;
+        }
+        groupDocument = std::move(reloaded);
+        groups = ParseGroups(groupDocument);
+        ClearGroupSelection(true);
+        return true;
+    }
+
+    void ImportGroup()
+    {
+        groupDocument = XmlDocument{};
+        groups.clear();
+        groupName.fill('\0');
+        hideGrouped = false;
+        marqueeMode = false;
+        if (groupXmlIndex < 0 ||
+            groupXmlIndex >= static_cast<int>(availableXmlFiles.size()))
+        {
+            status = "Select an XML to group first.";
+            return;
+        }
+
+        const std::string path =
+            availableXmlFiles[static_cast<size_t>(groupXmlIndex)].path;
+        if (!ReloadGroupDocument(path)) return;
+        if (groupDocument.props.empty())
+        {
+            groupDocument = XmlDocument{};
+            groups.clear();
+            status = "The selected XML contains no decorations to group.";
+            return;
+        }
+        for (const Prop& prop : groupDocument.props)
+        {
+            if (!prop.hasPosition)
+            {
+                groupDocument = XmlDocument{};
+                groups.clear();
+                status = "Group requires a valid pos value on every decoration.";
+                return;
+            }
+        }
+        if (groupDocument.props.size() > 2000)
+        {
+            groupDocument = XmlDocument{};
+            groups.clear();
+            status = "Group supports the Guild Wars 2 limit of 2000 decorations.";
+            return;
+        }
+
+        DecorationCounterWindow::SetRequirements(
+            groupDocument.fileName,
+            groupDocument.type,
+            BuildRequirements({ groupDocument })
+        );
+        status = "Loaded " + std::to_string(groupDocument.props.size()) +
+            " decorations. Select ungrouped orange points.";
+    }
+
+    void CreateGroup()
+    {
+        const std::string name = Trim(groupName.data());
+        if (name.empty())
+        {
+            status = "Enter a group name first.";
+            return;
+        }
+        if (name.find("--") != std::string::npos || name.back() == '-')
+        {
+            status = "Group names cannot contain -- or end with a hyphen.";
+            return;
+        }
+        for (const Group& group : groups)
+        {
+            if (group.name == name)
+            {
+                status = "A group with that name already exists.";
+                return;
+            }
+        }
+
+        size_t selectedCount = 0;
+        const int newGroupIndex = static_cast<int>(groups.size());
+        for (Prop& prop : groupDocument.props)
+        {
+            if (prop.selected && prop.groupIndex < 0)
+            {
+                prop.groupIndex = newGroupIndex;
+                ++selectedCount;
+            }
+        }
+        if (selectedCount == 0)
+        {
+            status = "Select at least one ungrouped decoration point.";
+            return;
+        }
+
+        Group group;
+        group.name = name;
+        groups.push_back(std::move(group));
+        const std::string rewritten = BuildGroupedXml(groupDocument, groups);
+        std::string error;
+        const std::string path = groupDocument.path;
+        if (!ReplaceFileSafely(Utf8Paths::FromUtf8(path), rewritten, error))
+        {
+            for (Prop& prop : groupDocument.props)
+            {
+                if (prop.groupIndex == newGroupIndex) prop.groupIndex = -1;
+            }
+            groups.pop_back();
+            status = error;
+            return;
+        }
+
+        if (!ReloadGroupDocument(path)) return;
+        status = "Created group \"" + name + "\" with " +
+            std::to_string(selectedCount) + " decorations.";
+    }
+
+    void Ungroup(size_t index)
+    {
+        if (index >= groups.size()) return;
+        const std::string name = groups[index].name;
+        size_t count = 0;
+        for (Prop& prop : groupDocument.props)
+        {
+            if (prop.groupIndex == static_cast<int>(index))
+            {
+                prop.groupIndex = -1;
+                ++count;
+            }
+            else if (prop.groupIndex > static_cast<int>(index))
+            {
+                --prop.groupIndex;
+            }
+        }
+        groups.erase(groups.begin() + static_cast<std::ptrdiff_t>(index));
+
+        const std::string rewritten = BuildGroupedXml(groupDocument, groups);
+        std::string error;
+        const std::string path = groupDocument.path;
+        if (!ReplaceFileSafely(Utf8Paths::FromUtf8(path), rewritten, error))
+        {
+            ReloadGroupDocument(path);
+            status = error;
+            return;
+        }
+        if (!ReloadGroupDocument(path)) return;
+        status = "Ungrouped \"" + name + "\" (" +
+            std::to_string(count) + " decorations).";
+    }
+
     void ImportExtract()
     {
         extractDocument = XmlDocument{};
@@ -570,42 +1046,7 @@ namespace
             return;
         }
 
-        size_t comment = extractDocument.source.find(
-            "<!--", extractDocument.rootOpenEnd + 1);
-        while (comment != std::string::npos && comment < extractDocument.rootCloseStart)
-        {
-            const size_t commentEnd = extractDocument.source.find("-->", comment + 4);
-            if (commentEnd == std::string::npos) break;
-            const size_t next = extractDocument.source.find("<!--", commentEnd + 3);
-            const size_t groupEnd =
-                next == std::string::npos || next >= extractDocument.rootCloseStart
-                ? extractDocument.rootCloseStart
-                : next;
-            Group group;
-            group.name = extractDocument.source.substr(
-                comment + 4, commentEnd - comment - 4);
-            while (!group.name.empty() &&
-                std::isspace(static_cast<unsigned char>(group.name.front())) != 0)
-            {
-                group.name.erase(group.name.begin());
-            }
-            while (!group.name.empty() &&
-                std::isspace(static_cast<unsigned char>(group.name.back())) != 0)
-            {
-                group.name.pop_back();
-            }
-            group.start = comment;
-            group.end = groupEnd;
-            for (const Prop& prop : extractDocument.props)
-            {
-                if (prop.start > commentEnd && prop.start < groupEnd)
-                {
-                    group.props.push_back(prop);
-                }
-            }
-            if (!group.name.empty()) extractGroups.push_back(std::move(group));
-            comment = next;
-        }
+        extractGroups = ParseGroups(extractDocument);
 
         if (extractGroups.empty())
         {
@@ -757,14 +1198,23 @@ void MergeExtractTab::Render()
         ClearLoaded();
     }
     ImGui::SameLine();
-    if (ImGui::RadioButton("Extract Groups", operation == 1))
+    if (ImGui::RadioButton("Group Decorations", operation == 1))
     {
         operation = 1;
         ClearLoaded();
     }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Extract Groups", operation == 2))
+    {
+        operation = 2;
+        ClearLoaded();
+    }
 
     ImGui::Dummy(ImVec2(0.0f, 16.0f));
-    RenderSectionHeading(operation == 0 ? "Merge Source Files" : "Extract Source File");
+    RenderSectionHeading(
+        operation == 0 ? "Merge Source Files" :
+        operation == 1 ? "Group Source File" : "Extract Source File"
+    );
     RenderFolderChoice();
     ImGui::Spacing();
 
@@ -823,6 +1273,87 @@ void MergeExtractTab::Render()
             RenderDisabledButton("Merge and Export");
         }
     }
+    else if (operation == 1)
+    {
+        RenderXmlCombo("##GroupXml", groupXmlIndex);
+        const float width =
+            (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        if (ImGui::Button("Refresh List##Group", ImVec2(width, 0.0f)))
+        {
+            RefreshXmlList();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Import Selected##Group", ImVec2(width, 0.0f)))
+        {
+            ImportGroup();
+        }
+
+        if (!groupDocument.props.empty())
+        {
+            ImGui::Spacing();
+            ImGui::TextWrapped(
+                "Left-click orange points to select them. Right-click blue points "
+                "to deselect them. Marquee Select captures the mouse so you can "
+                "drag a box without moving the game camera."
+            );
+            ImGui::Checkbox("Marquee Select", &marqueeMode);
+            ImGui::SameLine();
+            ImGui::Checkbox("Hide Grouped Decorations", &hideGrouped);
+
+            size_t selectedCount = 0;
+            for (const Prop& prop : groupDocument.props)
+            {
+                if (prop.selected) ++selectedCount;
+            }
+            ImGui::Text("Selected: %zu", selectedCount);
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::InputTextWithHint(
+                "##GroupName",
+                "Group name",
+                groupName.data(),
+                groupName.size()
+            );
+
+            if (ImGui::Button("Create Group", ImVec2(width, 0.0f)))
+            {
+                CreateGroup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Clear Selection", ImVec2(width, 0.0f)))
+            {
+                ClearGroupSelection(true);
+                status = "Selection and group name cleared.";
+            }
+
+            ImGui::Dummy(ImVec2(0.0f, 16.0f));
+            RenderSectionHeading("Decoration Groups");
+            if (groups.empty())
+            {
+                ImGui::TextDisabled("No groups have been created yet.");
+            }
+            else
+            {
+                ImGui::TextDisabled("Ungroup");
+                ImGui::BeginChild("##GroupList", ImVec2(0.0f, 150.0f), true);
+                for (size_t index = 0; index < groups.size(); ++index)
+                {
+                    const Group& group = groups[index];
+                    ImGui::PushID(static_cast<int>(index));
+                    if (ImGui::SmallButton("X"))
+                    {
+                        ImGui::PopID();
+                        Ungroup(index);
+                        break;
+                    }
+                    ImGui::SameLine();
+                    ImGui::Text("%s (%zu decorations)",
+                        group.name.c_str(), group.props.size());
+                    ImGui::PopID();
+                }
+                ImGui::EndChild();
+            }
+        }
+    }
     else
     {
         RenderXmlCombo("##ExtractXml", extractXmlIndex);
@@ -873,5 +1404,199 @@ void MergeExtractTab::ClearImportedData()
     ClearLoaded();
     baseXmlIndex = -1;
     extractXmlIndex = -1;
+    groupXmlIndex = -1;
     additionalSelected.assign(availableXmlFiles.size(), false);
+}
+
+void MergeExtractTab::RenderOverlay()
+{
+    if (operation != 1 || groupDocument.props.empty() ||
+        !AppSettings::Get().windowVisible)
+    {
+        hoveredGroupProp = -1;
+        groupInputCaptured = false;
+        groupMouseDown = false;
+        groupReleasePending = false;
+        groupRightClickPending = false;
+        return;
+    }
+
+    Mumble::Data* mumble = AppRuntime::GetMumble();
+    if (mumble == nullptr || mumble->Context.MapID == 0)
+    {
+        hoveredGroupProp = -1;
+        return;
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+    if (!groupInputCaptured && io.MousePos.x >= 0.0f && io.MousePos.y >= 0.0f)
+    {
+        groupMousePosition = io.MousePos;
+    }
+
+    const ImVec2 viewport = io.DisplaySize;
+    const Camera camera = CameraFromMumble(*mumble);
+    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    const float pointSize = (std::max)(2.0f, AppSettings::Get().pointSize);
+    const float hitRadius = pointSize + 5.0f;
+    const ImU32 orange = IM_COL32(255, 166, 36, 255);
+    const ImU32 blue = IM_COL32(50, 150, 255, 255);
+    const ImU32 gray = IM_COL32(125, 125, 125, 220);
+
+    hoveredGroupProp = -1;
+    float closestDistance = std::numeric_limits<float>::infinity();
+    std::vector<ImVec2> projected(groupDocument.props.size());
+    std::vector<unsigned char> visible(groupDocument.props.size(), 0);
+
+    for (size_t index = 0; index < groupDocument.props.size(); ++index)
+    {
+        const Prop& prop = groupDocument.props[index];
+        if (hideGrouped && prop.groupIndex >= 0) continue;
+
+        ImVec2 point;
+        if (!camera.Project(DecorationToWorld(prop.position), viewport, point))
+        {
+            continue;
+        }
+        projected[index] = point;
+        visible[index] = 1;
+
+        const ImU32 color = prop.groupIndex >= 0
+            ? gray : prop.selected ? blue : orange;
+        draw->AddCircleFilled(point, pointSize, color, 12);
+
+        if (prop.groupIndex < 0)
+        {
+            const float dx = point.x - groupMousePosition.x;
+            const float dy = point.y - groupMousePosition.y;
+            const float distance = std::sqrt(dx * dx + dy * dy);
+            if (distance <= hitRadius && distance < closestDistance)
+            {
+                closestDistance = distance;
+                hoveredGroupProp = static_cast<int>(index);
+            }
+        }
+    }
+
+    if (groupInputCaptured && marqueeMode)
+    {
+        const ImVec2 minimum(
+            (std::min)(marqueeStart.x, marqueeEnd.x),
+            (std::min)(marqueeStart.y, marqueeEnd.y)
+        );
+        const ImVec2 maximum(
+            (std::max)(marqueeStart.x, marqueeEnd.x),
+            (std::max)(marqueeStart.y, marqueeEnd.y)
+        );
+        draw->AddRectFilled(minimum, maximum, IM_COL32(50, 150, 255, 35));
+        draw->AddRect(minimum, maximum, blue, 0.0f, 0, 1.5f);
+    }
+
+    if (groupRightClickPending)
+    {
+        if (hoveredGroupProp >= 0)
+        {
+            groupDocument.props[static_cast<size_t>(hoveredGroupProp)].selected = false;
+        }
+        groupRightClickPending = false;
+    }
+
+    if (groupReleasePending)
+    {
+        const float width = std::fabs(marqueeEnd.x - marqueeStart.x);
+        const float height = std::fabs(marqueeEnd.y - marqueeStart.y);
+        if (marqueeMode && (width >= 4.0f || height >= 4.0f))
+        {
+            const float left = (std::min)(marqueeStart.x, marqueeEnd.x);
+            const float right = (std::max)(marqueeStart.x, marqueeEnd.x);
+            const float top = (std::min)(marqueeStart.y, marqueeEnd.y);
+            const float bottom = (std::max)(marqueeStart.y, marqueeEnd.y);
+            for (size_t index = 0; index < groupDocument.props.size(); ++index)
+            {
+                Prop& prop = groupDocument.props[index];
+                if (prop.groupIndex < 0 && visible[index] &&
+                    projected[index].x >= left && projected[index].x <= right &&
+                    projected[index].y >= top && projected[index].y <= bottom)
+                {
+                    prop.selected = true;
+                }
+            }
+        }
+        else if (hoveredGroupProp >= 0)
+        {
+            groupDocument.props[static_cast<size_t>(hoveredGroupProp)].selected = true;
+        }
+        groupReleasePending = false;
+    }
+}
+
+UINT MergeExtractTab::WndProc(HWND, UINT message, WPARAM, LPARAM lParam)
+{
+    if (operation != 1 || groupDocument.props.empty() ||
+        !AppSettings::Get().windowVisible)
+    {
+        return 1;
+    }
+
+    switch (message)
+    {
+    case WM_MOUSEMOVE:
+    case WM_LBUTTONDOWN:
+    case WM_LBUTTONUP:
+    case WM_LBUTTONDBLCLK:
+    case WM_RBUTTONDOWN:
+    case WM_RBUTTONUP:
+        groupMousePosition = ImVec2(
+            static_cast<float>(static_cast<short>(LOWORD(lParam))),
+            static_cast<float>(static_cast<short>(HIWORD(lParam)))
+        );
+        if (groupInputCaptured) marqueeEnd = groupMousePosition;
+        break;
+    default:
+        return 1;
+    }
+
+    if (!groupInputCaptured && ImGui::GetIO().WantCaptureMouse) return 1;
+
+    if (message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK)
+    {
+        if (marqueeMode || hoveredGroupProp >= 0)
+        {
+            groupInputCaptured = true;
+            groupMouseDown = true;
+            marqueeStart = groupMousePosition;
+            marqueeEnd = groupMousePosition;
+            return 0;
+        }
+    }
+    else if (message == WM_LBUTTONUP)
+    {
+        groupMouseDown = false;
+        if (groupInputCaptured)
+        {
+            marqueeEnd = groupMousePosition;
+            groupInputCaptured = false;
+            groupReleasePending = true;
+            return 0;
+        }
+    }
+    else if (message == WM_RBUTTONDOWN)
+    {
+        if (hoveredGroupProp >= 0 &&
+            groupDocument.props[static_cast<size_t>(hoveredGroupProp)].selected)
+        {
+            groupRightClickPending = true;
+            return 0;
+        }
+    }
+    else if (message == WM_RBUTTONUP && groupRightClickPending)
+    {
+        return 0;
+    }
+    else if (message == WM_MOUSEMOVE && groupInputCaptured)
+    {
+        return 0;
+    }
+
+    return 1;
 }
