@@ -104,6 +104,7 @@ namespace
     std::array<char, 128> groupName = {};
     bool hideGrouped = false;
     bool marqueeMode = false;
+    int visibilityDistance = 100;
     bool groupInputCaptured = false;
     bool groupMouseDown = false;
     bool groupReleasePending = false;
@@ -281,6 +282,7 @@ namespace
         groupName.fill('\0');
         hideGrouped = false;
         marqueeMode = false;
+        visibilityDistance = 100;
         groupInputCaptured = false;
         groupMouseDown = false;
         groupReleasePending = false;
@@ -1190,6 +1192,28 @@ void MergeExtractTab::Render()
 {
     if (!fileListInitialized) RefreshXmlList();
 
+    ImGui::TextWrapped(
+        "Choose the operation you need to perform:"
+    );
+
+    ImGui::Dummy(ImVec2(0.0f, 10.0f));
+    ImGui::TextWrapped(
+        "MERGE: Combine multiple XML files into one as groups."
+    );
+
+    ImGui::TextWrapped(
+        "GROUP: Import a single XML to create groups manually."
+    );
+
+    ImGui::TextWrapped(
+        "EXTRACT: Separate groups into individual files (includes an XML that excludes extracted decos)."
+    );
+
+    ImGui::Dummy(ImVec2(0.0f, 10.0f));
+    ImGui::TextWrapped(
+        "NOTE: If you choose to save the XML in-game, the groups will be deleted by in-game formatting. To retain groups, build the decorations you want to add, and merge them to your main, grouped XML."
+    );
+    
     ImGui::Dummy(ImVec2(0.0f, 10.0f));
     RenderSectionHeading("Operation");
     if (ImGui::RadioButton("Merge XML Files", operation == 0))
@@ -1223,7 +1247,7 @@ void MergeExtractTab::Render()
         ImGui::Text("Base Layout");
         RenderXmlCombo("##MergeBaseXml", baseXmlIndex);
 
-        ImGui::Spacing();
+        ImGui::Dummy(ImVec2(0.0f, 14.0f));
         ImGui::Text("Additional XML Files");
         ImGui::BeginChild("##MergeFileChecklist", ImVec2(0.0f, 130.0f), true);
         for (size_t index = 0; index < availableXmlFiles.size(); ++index)
@@ -1292,13 +1316,47 @@ void MergeExtractTab::Render()
         {
             ImGui::Spacing();
             ImGui::TextWrapped(
-                "Left-click orange points to select them. Right-click blue points "
-                "to deselect them. Marquee Select captures the mouse so you can "
-                "drag a box without moving the game camera."
+                "- Left-click points to select "
             );
+
+            ImGui::TextWrapped(
+                "- Right-click points to deselect"
+            );
+
+            ImGui::TextWrapped(
+                "- Enable Marquee to select multiple points in a selected region"
+            );
+
+            ImGui::TextWrapped(
+                "- Adjust Visible Distance slider to reduce visible decoration points that are further away"
+            );
+
+            ImGui::Dummy(ImVec2(0.0f, 12.0f));
             ImGui::Checkbox("Marquee Select", &marqueeMode);
             ImGui::SameLine();
             ImGui::Checkbox("Hide Grouped Decorations", &hideGrouped);
+
+            ImGui::TextUnformatted("Visibility Distance:");
+            ImGui::SameLine();
+            ImGui::TextUnformatted("None");
+            ImGui::SameLine();
+            const float allLabelWidth = ImGui::CalcTextSize("All").x;
+            const float sliderWidth = (std::max)(
+                60.0f,
+                ImGui::GetContentRegionAvail().x - allLabelWidth -
+                ImGui::GetStyle().ItemSpacing.x
+            );
+            ImGui::SetNextItemWidth(sliderWidth);
+            ImGui::SliderInt(
+                "##GroupVisibilityDistance",
+                &visibilityDistance,
+                0,
+                100,
+                "",
+                ImGuiSliderFlags_NoInput
+            );
+            ImGui::SameLine();
+            ImGui::TextUnformatted("All");
 
             size_t selectedCount = 0;
             for (const Prop& prop : groupDocument.props)
@@ -1436,6 +1494,7 @@ void MergeExtractTab::RenderOverlay()
 
     const ImVec2 viewport = io.DisplaySize;
     const Camera camera = CameraFromMumble(*mumble);
+    const Vec3 avatarPosition = FromMumble(mumble->AvatarPosition);
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
     const float pointSize = (std::max)(2.0f, AppSettings::Get().pointSize);
     const float hitRadius = pointSize + 5.0f;
@@ -1448,13 +1507,50 @@ void MergeExtractTab::RenderOverlay()
     std::vector<ImVec2> projected(groupDocument.props.size());
     std::vector<unsigned char> visible(groupDocument.props.size(), 0);
 
+    float farthestDistance = 0.0f;
+    if (visibilityDistance > 0 && visibilityDistance < 100)
+    {
+        for (const Prop& prop : groupDocument.props)
+        {
+            if (hideGrouped && prop.groupIndex >= 0)
+            {
+                continue;
+            }
+            const Vec3 world = DecorationToWorld(prop.position);
+            farthestDistance = (std::max)(
+                farthestDistance,
+                Length(Subtract(world, avatarPosition))
+            );
+        }
+    }
+    const float visibleRange = farthestDistance *
+        (static_cast<float>(visibilityDistance) / 100.0f);
+
     for (size_t index = 0; index < groupDocument.props.size(); ++index)
     {
-        const Prop& prop = groupDocument.props[index];
-        if (hideGrouped && prop.groupIndex >= 0) continue;
+        Prop& prop = groupDocument.props[index];
+        if (visibilityDistance <= 0 || (hideGrouped && prop.groupIndex >= 0))
+        {
+            if (visibilityDistance <= 0 && prop.groupIndex < 0)
+            {
+                prop.selected = false;
+            }
+            continue;
+        }
+
+        const Vec3 world = DecorationToWorld(prop.position);
+        if (visibilityDistance < 100 &&
+            Length(Subtract(world, avatarPosition)) > visibleRange)
+        {
+            if (prop.groupIndex < 0)
+            {
+                prop.selected = false;
+            }
+            continue;
+        }
 
         ImVec2 point;
-        if (!camera.Project(DecorationToWorld(prop.position), viewport, point))
+        if (!camera.Project(world, viewport, point))
         {
             continue;
         }
@@ -1476,6 +1572,48 @@ void MergeExtractTab::RenderOverlay()
                 hoveredGroupProp = static_cast<int>(index);
             }
         }
+    }
+
+    if (hoveredGroupProp >= 0 && !groupInputCaptured && !io.WantCaptureMouse)
+    {
+        const Prop& hovered =
+            groupDocument.props[static_cast<size_t>(hoveredGroupProp)];
+        const ImVec2 textSize = ImGui::CalcTextSize(hovered.name.c_str());
+        const ImVec2 padding(7.0f, 5.0f);
+        ImVec2 tooltipPosition(
+            groupMousePosition.x + 18.0f,
+            groupMousePosition.y + 8.0f
+        );
+        const ImVec2 tooltipSize(
+            textSize.x + padding.x * 2.0f,
+            textSize.y + padding.y * 2.0f
+        );
+        tooltipPosition.x = (std::min)(
+            tooltipPosition.x,
+            (std::max)(4.0f, viewport.x - tooltipSize.x - 4.0f)
+        );
+        tooltipPosition.y = (std::min)(
+            tooltipPosition.y,
+            (std::max)(4.0f, viewport.y - tooltipSize.y - 4.0f)
+        );
+        ImDrawList* foreground = ImGui::GetForegroundDrawList();
+        foreground->AddRectFilled(
+            tooltipPosition,
+            ImVec2(
+                tooltipPosition.x + tooltipSize.x,
+                tooltipPosition.y + tooltipSize.y
+            ),
+            IM_COL32(24, 24, 28, 245),
+            4.0f
+        );
+        foreground->AddText(
+            ImVec2(
+                tooltipPosition.x + padding.x,
+                tooltipPosition.y + padding.y
+            ),
+            IM_COL32(255, 255, 255, 255),
+            hovered.name.c_str()
+        );
     }
 
     if (groupInputCaptured && marqueeMode)

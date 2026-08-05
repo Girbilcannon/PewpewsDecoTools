@@ -229,7 +229,8 @@ void DecorationCounterWindow::SetRequirements(
     const std::string& newContext,
     int newType,
     const std::vector<Requirement>& newRequirements,
-    const std::string& guildId
+    const std::string& guildId,
+    bool loadAvailability
 )
 {
     ++generation;
@@ -250,7 +251,11 @@ void DecorationCounterWindow::SetRequirements(
         ? "The loaded XML contains no countable decorations."
         : "Preparing decoration counts...";
 
-    if (!requirements.empty())
+    if (!requirements.empty() && !loadAvailability)
+    {
+        status = "Select a specific guild to load available counts.";
+    }
+    else if (!requirements.empty())
     {
         if (decorationType == 0 || !selectedGuildId.empty()) StartCounts();
         else StartGuilds();

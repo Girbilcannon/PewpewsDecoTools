@@ -135,6 +135,23 @@ namespace
     JobKind activeJobKind = JobKind::None;
     unsigned jobGeneration = 0;
 
+    bool HasSelectedGuild()
+    {
+        return selectedGuildIndex >= 0 &&
+            selectedGuildIndex < static_cast<int>(guilds.size());
+    }
+
+    bool IsNoSpecificGuild()
+    {
+        return Maps[selectedDestinationIndex].type == 1 &&
+            !HasSelectedGuild();
+    }
+
+    bool EffectiveIncludeMissing()
+    {
+        return IsNoSpecificGuild() || includeMissing;
+    }
+
     void RenderSectionHeading(const char* label)
     {
         ImGui::SetWindowFontScale(1.2f);
@@ -596,10 +613,8 @@ namespace
         precheck = {};
         precheck.valid = true;
         precheck.destinationIndex = selectedDestinationIndex;
-        precheck.includeMissing = includeMissing;
-        precheck.guildId =
-            selectedGuildIndex >= 0 &&
-            selectedGuildIndex < static_cast<int>(guilds.size())
+        precheck.includeMissing = EffectiveIncludeMissing();
+        precheck.guildId = HasSelectedGuild()
             ? guilds[static_cast<size_t>(selectedGuildIndex)].id
             : std::string();
 
@@ -693,7 +708,15 @@ namespace
         if (!precheck.ownershipAvailable)
         {
             output << "Ownership counts were not verified.\n";
-            output << "Enter a valid API key in Settings to enable counts.\n\n";
+            if (destination.type == 1 && precheck.guildId.empty())
+            {
+                output << "No specific guild was selected. All transferable "
+                    "decorations will be retained.\n\n";
+            }
+            else
+            {
+                output << "Enter a valid API key in Settings to enable counts.\n\n";
+            }
         }
         else if (precheck.missing.empty())
         {
@@ -746,7 +769,8 @@ namespace
                 counterContext,
                 destination.type,
                 counterItems,
-                precheck.guildId
+                precheck.guildId,
+                !(destination.type == 1 && precheck.guildId.empty())
             );
         }
     }
@@ -788,16 +812,10 @@ namespace
         const std::map<int, int> required = precheck.required;
         const unsigned generation = jobGeneration;
 
-        if (apiKey.empty())
+        if (apiKey.empty() || (destination.type == 1 && guildId.empty()))
         {
             FinishReport();
             status = "Pre-check complete without ownership counts.";
-            return;
-        }
-        if (destination.type == 1 && guildId.empty())
-        {
-            precheck.valid = false;
-            status = "Select a guild before running a Guild Hall pre-check.";
             return;
         }
 
@@ -883,10 +901,6 @@ namespace
                     break;
                 }
             }
-            if (selectedGuildIndex < 0 && guilds.size() == 1)
-            {
-                selectedGuildIndex = 0;
-            }
             InvalidatePrecheck();
             status = guilds.empty()
                 ? "No guilds were returned for this account."
@@ -946,17 +960,16 @@ namespace
 
     void ExportSwap()
     {
+        const bool effectiveIncludeMissing = EffectiveIncludeMissing();
         if (!precheck.valid ||
             precheck.destinationIndex != selectedDestinationIndex ||
-            precheck.includeMissing != includeMissing)
+            precheck.includeMissing != effectiveIncludeMissing)
         {
             status = "Run Pre-Check again before exporting.";
             return;
         }
 
-        const std::string currentGuildId =
-            selectedGuildIndex >= 0 &&
-            selectedGuildIndex < static_cast<int>(guilds.size())
+        const std::string currentGuildId = HasSelectedGuild()
             ? guilds[static_cast<size_t>(selectedGuildIndex)].id
             : std::string();
         if (precheck.guildId != currentGuildId)
@@ -964,7 +977,7 @@ namespace
             status = "Guild selection changed. Run Pre-Check again.";
             return;
         }
-        if (!includeMissing && !precheck.ownershipAvailable)
+        if (!effectiveIncludeMissing && !precheck.ownershipAvailable)
         {
             status =
                 "Ownership counts are required to exclude missing decorations.";
@@ -982,7 +995,7 @@ namespace
         {
             bool keep = prop.targetId >= 0;
             bool missingOwnership = false;
-            if (keep && !includeMissing)
+            if (keep && !effectiveIncludeMissing)
             {
                 const auto ownedEntry = precheck.owned.find(prop.targetId);
                 const int owned =
@@ -1161,7 +1174,17 @@ void MapSwapTab::Render()
         "Choose a decoration XML, then select the map it should be converted for."
     );
 
-    ImGui::Spacing();
+    ImGui::Dummy(ImVec2(0.0f, 6.0f));
+    ImGui::TextWrapped(
+        "If a Guild Hall is the Destination, choosing a guild from the list will give you an accurate decoration count for that guild, as well as allow the option to exclude anything missing decorations."
+    );
+
+    ImGui::Dummy(ImVec2(0.0f, 10.0f));
+    ImGui::TextWrapped(
+        "NOTE: To build for a specific guild, you must be the guild owner and provide a valid API key in Settings."
+    );
+
+    ImGui::Dummy(ImVec2(0.0f, 14.0f));
     if (ImGui::RadioButton("Homestead##SwapFolder", selectedFolderType == 0))
     {
         selectedFolderType = 0;
@@ -1251,6 +1274,15 @@ void MapSwapTab::Render()
 
     if (Maps[selectedDestinationIndex].type == 1)
     {
+        if (AppSettings::Get().apiKey[0] == '\0' &&
+            (!guilds.empty() || selectedGuildIndex >= 0))
+        {
+            guilds.clear();
+            selectedGuildIndex = -1;
+            includeMissing = true;
+            InvalidatePrecheck();
+        }
+
         if (guilds.empty() &&
             !guildLoadAttempted &&
             activeJobKind == JobKind::None &&
@@ -1261,14 +1293,26 @@ void MapSwapTab::Render()
 
         ImGui::Spacing();
         ImGui::Text("Destination Guild");
-        const char* guildLabel =
-            selectedGuildIndex >= 0 &&
-            selectedGuildIndex < static_cast<int>(guilds.size())
+        const char* guildLabel = HasSelectedGuild()
             ? guilds[static_cast<size_t>(selectedGuildIndex)].name.c_str()
-            : "Select a guild...";
+            : "No Specific Guild";
         ImGui::SetNextItemWidth(-110.0f);
         if (ImGui::BeginCombo("##SwapGuild", guildLabel))
         {
+            const bool noSpecificGuildSelected = !HasSelectedGuild();
+            if (ImGui::Selectable(
+                "No Specific Guild",
+                noSpecificGuildSelected))
+            {
+                selectedGuildIndex = -1;
+                includeMissing = true;
+                InvalidatePrecheck();
+            }
+            if (noSpecificGuildSelected)
+            {
+                ImGui::SetItemDefaultFocus();
+            }
+
             for (size_t index = 0; index < guilds.size(); ++index)
             {
                 const std::string label = guilds[index].tag.empty()
@@ -1288,7 +1332,8 @@ void MapSwapTab::Render()
             ImGui::EndCombo();
         }
         ImGui::SameLine();
-        if (activeJobKind == JobKind::None)
+        if (activeJobKind == JobKind::None &&
+            AppSettings::Get().apiKey[0] != '\0')
         {
             if (ImGui::Button("Refresh##Guilds", ImVec2(100.0f, 0.0f)))
             {
@@ -1305,7 +1350,28 @@ void MapSwapTab::Render()
     ImGui::Dummy(ImVec2(0.0f, 16.0f));
     RenderSectionHeading("Pre-Check");
 
-    if (ImGui::Checkbox("Include Missing Decorations", &includeMissing))
+    const bool noSpecificGuild = IsNoSpecificGuild();
+    if (noSpecificGuild && !includeMissing)
+    {
+        includeMissing = true;
+        InvalidatePrecheck();
+    }
+    if (noSpecificGuild)
+    {
+        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+        ImGui::PushStyleVar(
+            ImGuiStyleVar_Alpha,
+            ImGui::GetStyle().Alpha * 0.5f
+        );
+    }
+    const bool includeMissingChanged =
+        ImGui::Checkbox("Include Missing Decorations", &includeMissing);
+    if (noSpecificGuild)
+    {
+        ImGui::PopStyleVar();
+        ImGui::PopItemFlag();
+    }
+    if (includeMissingChanged)
     {
         InvalidatePrecheck();
     }

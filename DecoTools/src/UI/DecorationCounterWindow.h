@@ -21,7 +21,8 @@ namespace DecorationCounterWindow
         const std::string& context,
         int decorationType,
         const std::vector<Requirement>& requirements,
-        const std::string& guildId = {}
+        const std::string& guildId = {},
+        bool loadAvailability = true
     );
 
     void SetResolvedRequirements(

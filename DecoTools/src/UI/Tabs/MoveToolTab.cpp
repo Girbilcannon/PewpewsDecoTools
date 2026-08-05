@@ -1333,7 +1333,7 @@ void MoveToolTab::Render()
         "Save the current decoration group you are working on in-game and import it here to edit. Once you are satisfied with the new position, Hit the Export button and in-game you can re-import the newly saved file."
     );
 
-    ImGui::Spacing();
+    ImGui::Dummy(ImVec2(0.0f, 14.0f));
     ImGui::Text("Import Decoration XML");
 
     if (ImGui::RadioButton("Homestead", &selectedFolderType, 0))
