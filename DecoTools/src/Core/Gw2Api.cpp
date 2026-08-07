@@ -58,7 +58,7 @@ namespace
         }
 
         HINTERNET session = WinHttpOpen(
-            L"PewpewsDecoTools/1.1.0.3",
+            L"PewpewsDecoTools/1.2.0.2",
             WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
             WINHTTP_NO_PROXY_NAME,
             WINHTTP_NO_PROXY_BYPASS,

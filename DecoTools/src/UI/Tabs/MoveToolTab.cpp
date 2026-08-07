@@ -38,11 +38,28 @@ namespace
         float z = 0.0f;
     };
 
+    struct DVec3
+    {
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
+    };
+
+    struct Mat3
+    {
+        double m[3][3] = {};
+    };
+
     struct PropPosition
     {
         size_t valueStart = 0;
         size_t valueLength = 0;
-        Vec3 position;
+        size_t rotationValueStart = 0;
+        size_t rotationValueLength = 0;
+        size_t tagEnd = 0;
+        bool hasRotationAttribute = false;
+        DVec3 position;
+        DVec3 rotation;
         int id = -1;
         std::string name;
     };
@@ -95,6 +112,20 @@ namespace
     float dragStartAnchor[3] = { 0.0f, 0.0f, 0.0f };
     ImVec2 activeAxisDirection(0.0f, 0.0f);
     float activeDecoUnitsPerPixel = 0.0f;
+    int manipulatorMode = 0;
+    float groupRotationDegrees[3] = { 0.0f, 0.0f, 0.0f };
+    Mat3 accumulatedGroupRotation =
+    {
+        {
+            { 1.0, 0.0, 0.0 },
+            { 0.0, 1.0, 0.0 },
+            { 0.0, 0.0, 1.0 }
+        }
+    };
+    DVec3 rotationDragPivot;
+    Mat3 rotationDragStartGroupRotation;
+    std::vector<DVec3> rotationDragStartPositions;
+    std::vector<Mat3> rotationDragStartOrientations;
 
     Vec3 Add(Vec3 a, Vec3 b)
     {
@@ -107,6 +138,21 @@ namespace
     }
 
     Vec3 Multiply(Vec3 value, float scale)
+    {
+        return { value.x * scale, value.y * scale, value.z * scale };
+    }
+
+    DVec3 Add(DVec3 a, DVec3 b)
+    {
+        return { a.x + b.x, a.y + b.y, a.z + b.z };
+    }
+
+    DVec3 Subtract(DVec3 a, DVec3 b)
+    {
+        return { a.x - b.x, a.y - b.y, a.z - b.z };
+    }
+
+    DVec3 Multiply(DVec3 value, double scale)
     {
         return { value.x * scale, value.y * scale, value.z * scale };
     }
@@ -142,17 +188,17 @@ namespace
         return { value.X, value.Y, value.Z };
     }
 
-    Vec3 DecorationToWorld(Vec3 decoration)
+    Vec3 DecorationToWorld(DVec3 decoration)
     {
         return
         {
-            decoration.x * DecorationScale,
-            -decoration.z * DecorationScale,
-            decoration.y * DecorationScale
+            static_cast<float>(decoration.x * DecorationScale),
+            static_cast<float>(-decoration.z * DecorationScale),
+            static_cast<float>(decoration.y * DecorationScale)
         };
     }
 
-    Vec3 WorldToDecoration(Vec3 world)
+    DVec3 WorldToDecoration(Vec3 world)
     {
         return
         {
@@ -160,6 +206,189 @@ namespace
             world.z / DecorationScale,
             -world.y / DecorationScale
         };
+    }
+
+    Mat3 IdentityMatrix()
+    {
+        return
+        {
+            {
+                { 1.0, 0.0, 0.0 },
+                { 0.0, 1.0, 0.0 },
+                { 0.0, 0.0, 1.0 }
+            }
+        };
+    }
+
+    Mat3 Multiply(const Mat3& a, const Mat3& b)
+    {
+        Mat3 result = {};
+        for (int row = 0; row < 3; ++row)
+        {
+            for (int column = 0; column < 3; ++column)
+            {
+                result.m[row][column] =
+                    a.m[row][0] * b.m[0][column] +
+                    a.m[row][1] * b.m[1][column] +
+                    a.m[row][2] * b.m[2][column];
+            }
+        }
+        return result;
+    }
+
+    DVec3 Multiply(const Mat3& matrix, DVec3 value)
+    {
+        return
+        {
+            matrix.m[0][0] * value.x + matrix.m[0][1] * value.y + matrix.m[0][2] * value.z,
+            matrix.m[1][0] * value.x + matrix.m[1][1] * value.y + matrix.m[1][2] * value.z,
+            matrix.m[2][0] * value.x + matrix.m[2][1] * value.y + matrix.m[2][2] * value.z
+        };
+    }
+
+    Mat3 Transpose(const Mat3& matrix)
+    {
+        Mat3 result = {};
+        for (int row = 0; row < 3; ++row)
+        {
+            for (int column = 0; column < 3; ++column)
+            {
+                result.m[row][column] = matrix.m[column][row];
+            }
+        }
+        return result;
+    }
+
+    Mat3 RotationX(double radians)
+    {
+        Mat3 result = IdentityMatrix();
+        const double cosine = std::cos(radians);
+        const double sine = std::sin(radians);
+        result.m[1][1] = cosine;
+        result.m[1][2] = -sine;
+        result.m[2][1] = sine;
+        result.m[2][2] = cosine;
+        return result;
+    }
+
+    Mat3 RotationY(double radians)
+    {
+        Mat3 result = IdentityMatrix();
+        const double cosine = std::cos(radians);
+        const double sine = std::sin(radians);
+        result.m[0][0] = cosine;
+        result.m[0][2] = sine;
+        result.m[2][0] = -sine;
+        result.m[2][2] = cosine;
+        return result;
+    }
+
+    Mat3 RotationZ(double radians)
+    {
+        Mat3 result = IdentityMatrix();
+        const double cosine = std::cos(radians);
+        const double sine = std::sin(radians);
+        result.m[0][0] = cosine;
+        result.m[0][1] = -sine;
+        result.m[1][0] = sine;
+        result.m[1][1] = cosine;
+        return result;
+    }
+
+    Mat3 AxisRotation(int axis, double radians)
+    {
+        if (axis == 0)
+        {
+            return RotationX(radians);
+        }
+        if (axis == 1)
+        {
+            return RotationY(radians);
+        }
+        return RotationZ(radians);
+    }
+
+    double NormalizeRadians(double radians)
+    {
+        constexpr double TwoPi = 6.28318530717958647692;
+        radians = std::fmod(radians, TwoPi);
+        if (radians < 0.0)
+        {
+            radians += TwoPi;
+        }
+        return radians;
+    }
+
+    Mat3 Gw2EulerToMatrix(DVec3 rotation)
+    {
+        return Multiply(
+            RotationZ(rotation.z),
+            Multiply(RotationX(rotation.x), RotationY(rotation.y))
+        );
+    }
+
+    DVec3 Gw2MatrixToEuler(const Mat3& matrix)
+    {
+        constexpr double Epsilon = 1.0e-8;
+        const double sinX = std::clamp(matrix.m[2][1], -1.0, 1.0);
+        const double x = std::asin(sinX);
+        const double cosX = std::cos(x);
+
+        double y = 0.0;
+        double z = 0.0;
+        if (std::abs(cosX) > Epsilon)
+        {
+            y = std::atan2(-matrix.m[2][0], matrix.m[2][2]);
+            z = std::atan2(-matrix.m[0][1], matrix.m[1][1]);
+        }
+        else
+        {
+            y = std::atan2(matrix.m[0][2], matrix.m[0][0]);
+        }
+
+        return
+        {
+            NormalizeRadians(x),
+            NormalizeRadians(y),
+            NormalizeRadians(z)
+        };
+    }
+
+    Mat3 GroupEulerDegreesToMatrix(const float degrees[3])
+    {
+        constexpr double DegreesToRadians = 0.01745329251994329577;
+        return Multiply(
+            RotationZ(static_cast<double>(degrees[2]) * DegreesToRadians),
+            Multiply(
+                RotationY(static_cast<double>(degrees[1]) * DegreesToRadians),
+                RotationX(static_cast<double>(degrees[0]) * DegreesToRadians)
+            )
+        );
+    }
+
+    void GroupMatrixToEulerDegrees(const Mat3& matrix, float degrees[3])
+    {
+        constexpr double Epsilon = 1.0e-8;
+        constexpr double RadiansToDegrees = 57.2957795130823208768;
+        const double sinY = std::clamp(-matrix.m[2][0], -1.0, 1.0);
+        const double y = std::asin(sinY);
+        const double cosY = std::cos(y);
+
+        double x = 0.0;
+        double z = 0.0;
+        if (std::abs(cosY) > Epsilon)
+        {
+            x = std::atan2(matrix.m[2][1], matrix.m[2][2]);
+            z = std::atan2(matrix.m[1][0], matrix.m[0][0]);
+        }
+        else
+        {
+            x = std::atan2(-matrix.m[1][2], matrix.m[1][1]);
+        }
+
+        degrees[0] = static_cast<float>(x * RadiansToDegrees);
+        degrees[1] = static_cast<float>(y * RadiansToDegrees);
+        degrees[2] = static_cast<float>(z * RadiansToDegrees);
     }
 
     Camera CameraFromMumble(const Mumble::Data& mumble)
@@ -282,7 +511,7 @@ namespace
         ImGui::PopItemFlag();
     }
 
-    bool ParseFloat3(const std::string& value, Vec3& result)
+    bool ParseFloat3(const std::string& value, DVec3& result)
     {
         std::istringstream stream(value);
         if (!(stream >> result.x >> result.y >> result.z))
@@ -405,7 +634,7 @@ namespace
 
         double sumX = 0.0;
         double sumY = 0.0;
-        float bottomZ = -std::numeric_limits<float>::infinity();
+        double bottomZ = -std::numeric_limits<double>::infinity();
 
         for (const PropPosition& prop : props)
         {
@@ -416,16 +645,16 @@ namespace
 
         anchorPosition[0] = static_cast<float>(sumX / props.size());
         anchorPosition[1] = static_cast<float>(sumY / props.size());
-        anchorPosition[2] = bottomZ;
+        anchorPosition[2] = static_cast<float>(bottomZ);
     }
 
     void MoveAnchorTo(const float target[3])
     {
-        const Vec3 delta =
+        const DVec3 delta =
         {
-            target[0] - anchorPosition[0],
-            target[1] - anchorPosition[1],
-            target[2] - anchorPosition[2]
+            static_cast<double>(target[0] - anchorPosition[0]),
+            static_cast<double>(target[1] - anchorPosition[1]),
+            static_cast<double>(target[2] - anchorPosition[2])
         };
 
         for (PropPosition& prop : props)
@@ -438,11 +667,89 @@ namespace
         anchorPosition[2] = target[2];
     }
 
-    std::string FormatFloat(float value)
+    DVec3 CalculateAveragePivot()
     {
-        if (std::fabs(value) < 0.0000005f)
+        DVec3 pivot;
+        if (props.empty())
         {
-            value = 0.0f;
+            return pivot;
+        }
+
+        for (const PropPosition& prop : props)
+        {
+            pivot = Add(pivot, prop.position);
+        }
+        return Multiply(pivot, 1.0 / static_cast<double>(props.size()));
+    }
+
+    void CaptureRotationSnapshot()
+    {
+        rotationDragPivot = CalculateAveragePivot();
+        rotationDragStartPositions.clear();
+        rotationDragStartOrientations.clear();
+        rotationDragStartPositions.reserve(props.size());
+        rotationDragStartOrientations.reserve(props.size());
+
+        for (const PropPosition& prop : props)
+        {
+            rotationDragStartPositions.push_back(prop.position);
+            rotationDragStartOrientations.push_back(
+                Gw2EulerToMatrix(prop.rotation)
+            );
+        }
+    }
+
+    void ApplyRigidGroupRotation(const Mat3& groupRotation)
+    {
+        if (rotationDragStartPositions.size() != props.size() ||
+            rotationDragStartOrientations.size() != props.size())
+        {
+            return;
+        }
+
+        const Mat3 orientationDelta = Transpose(groupRotation);
+        for (size_t index = 0; index < props.size(); ++index)
+        {
+            const DVec3 relative = Subtract(
+                rotationDragStartPositions[index],
+                rotationDragPivot
+            );
+            props[index].position = Add(
+                rotationDragPivot,
+                Multiply(groupRotation, relative)
+            );
+            props[index].rotation = Gw2MatrixToEuler(
+                Multiply(
+                    rotationDragStartOrientations[index],
+                    orientationDelta
+                )
+            );
+        }
+
+        ComputeAnchor();
+    }
+
+    void ApplyNumericGroupRotation(const float requestedDegrees[3])
+    {
+        CaptureRotationSnapshot();
+        const Mat3 requested = GroupEulerDegreesToMatrix(requestedDegrees);
+        const Mat3 delta = Multiply(
+            requested,
+            Transpose(accumulatedGroupRotation)
+        );
+        ApplyRigidGroupRotation(delta);
+        accumulatedGroupRotation = requested;
+        GroupMatrixToEulerDegrees(
+            accumulatedGroupRotation,
+            groupRotationDegrees
+        );
+    }
+
+    std::string FormatFloat(double value)
+    {
+        if (std::fabs(value) < 0.0000005)
+        {
+            value = 0.0;
         }
 
         std::ostringstream stream;
@@ -500,16 +807,65 @@ namespace
 
     std::string BuildUpdatedXml()
     {
-        std::string output = xmlSource;
-        for (size_t index = props.size(); index-- > 0;)
+        struct Replacement
         {
-            const PropPosition& prop = props[index];
-            const std::string position =
-                FormatFloat(prop.position.x) + " " +
-                FormatFloat(prop.position.y) + " " +
-                FormatFloat(prop.position.z);
+            size_t start = 0;
+            size_t length = 0;
+            std::string value;
+        };
 
-            output.replace(prop.valueStart, prop.valueLength, position);
+        std::vector<Replacement> replacements;
+        replacements.reserve(props.size() * 2);
+        for (const PropPosition& prop : props)
+        {
+            replacements.push_back(
+                {
+                    prop.valueStart,
+                    prop.valueLength,
+                    FormatFloat(prop.position.x) + " " +
+                        FormatFloat(prop.position.y) + " " +
+                        FormatFloat(prop.position.z)
+                }
+            );
+
+            const std::string rotation =
+                FormatFloat(prop.rotation.x) + " " +
+                FormatFloat(prop.rotation.y) + " " +
+                FormatFloat(prop.rotation.z);
+            replacements.push_back(
+                prop.hasRotationAttribute
+                    ? Replacement
+                    {
+                        prop.rotationValueStart,
+                        prop.rotationValueLength,
+                        rotation
+                    }
+                    : Replacement
+                    {
+                        prop.tagEnd,
+                        0,
+                        " rot=\"" + rotation + "\""
+                    }
+            );
+        }
+
+        std::sort(
+            replacements.begin(),
+            replacements.end(),
+            [](const Replacement& left, const Replacement& right)
+            {
+                return left.start > right.start;
+            }
+        );
+
+        std::string output = xmlSource;
+        for (const Replacement& replacement : replacements)
+        {
+            output.replace(
+                replacement.start,
+                replacement.length,
+                replacement.value
+            );
         }
         return output;
     }
@@ -777,8 +1133,13 @@ namespace
             }
 
             std::string positionText;
+            std::string rotationText;
             std::string idText;
             PropPosition prop;
+            prop.tagEnd =
+                propEnd > propStart && source[propEnd - 1] == '/'
+                    ? propEnd - 1
+                    : propEnd;
             if (ReadAttribute(
                 source,
                 propStart,
@@ -792,6 +1153,21 @@ namespace
                 if (!ParseFloat3(positionText, prop.position))
                 {
                     status = "Invalid XML: a decoration has an invalid pos value.";
+                    return false;
+                }
+                prop.hasRotationAttribute = ReadAttribute(
+                    source,
+                    propStart,
+                    propEnd,
+                    "rot",
+                    rotationText,
+                    &prop.rotationValueStart,
+                    &prop.rotationValueLength
+                );
+                if (prop.hasRotationAttribute &&
+                    !ParseFloat3(rotationText, prop.rotation))
+                {
+                    status = "Invalid XML: a decoration has an invalid rot value.";
                     return false;
                 }
                 if (ReadAttribute(source, propStart, propEnd, "id", idText))
@@ -823,6 +1199,12 @@ namespace
         importedFileName = Utf8Paths::ToUtf8(
             Utf8Paths::FromUtf8(path).filename()
         );
+        accumulatedGroupRotation = IdentityMatrix();
+        groupRotationDegrees[0] = 0.0f;
+        groupRotationDegrees[1] = 0.0f;
+        groupRotationDegrees[2] = 0.0f;
+        rotationDragStartPositions.clear();
+        rotationDragStartOrientations.clear();
         ComputeAnchor();
 
         std::map<int, DecorationCounterWindow::Requirement> countById;
@@ -860,8 +1242,13 @@ namespace
             return;
         }
 
-        const Vec3 target = WorldToDecoration(FromMumble(mumble->AvatarPosition));
-        const float targetArray[3] = { target.x, target.y, target.z };
+        const DVec3 target = WorldToDecoration(FromMumble(mumble->AvatarPosition));
+        const float targetArray[3] =
+        {
+            static_cast<float>(target.x),
+            static_cast<float>(target.y),
+            static_cast<float>(target.z)
+        };
         MoveAnchorTo(targetArray);
         status =
             "Moved the decoration group to the character on map " +
@@ -1031,21 +1418,134 @@ namespace
         );
     }
 
+    DVec3 RingPoint(
+        DVec3 center,
+        const Mat3& ringFrame,
+        int axis,
+        double radius,
+        double angle
+    )
+    {
+        const double cosine = std::cos(angle);
+        const double sine = std::sin(angle);
+        DVec3 local;
+        if (axis == 0)
+        {
+            local = { 0.0, cosine * radius, sine * radius };
+        }
+        else if (axis == 1)
+        {
+            local = { cosine * radius, 0.0, sine * radius };
+        }
+        else
+        {
+            local = { cosine * radius, sine * radius, 0.0 };
+        }
+        return Add(center, Multiply(ringFrame, local));
+    }
+
+    void DrawRotationRing(
+        ImDrawList* draw,
+        const Camera& camera,
+        ImVec2 viewport,
+        DVec3 center,
+        const Mat3& ringFrame,
+        int axis,
+        double radius,
+        ImU32 color,
+        float thickness
+    )
+    {
+        constexpr int Segments = 96;
+        constexpr double TwoPi = 6.28318530717958647692;
+        ImVec2 previous;
+        bool previousVisible = false;
+
+        for (int index = 0; index <= Segments; ++index)
+        {
+            const double angle =
+                static_cast<double>(index) / Segments * TwoPi;
+            ImVec2 point;
+            const bool visible = camera.Project(
+                DecorationToWorld(RingPoint(
+                    center,
+                    ringFrame,
+                    axis,
+                    radius,
+                    angle
+                )),
+                viewport,
+                point
+            );
+            if (visible && previousVisible)
+            {
+                draw->AddLine(previous, point, color, thickness);
+            }
+            previous = point;
+            previousVisible = visible;
+        }
+    }
+
+    float DistanceToRotationRing(
+        const Camera& camera,
+        ImVec2 viewport,
+        DVec3 center,
+        const Mat3& ringFrame,
+        int axis,
+        double radius,
+        ImVec2 mouse
+    )
+    {
+        constexpr int Segments = 96;
+        constexpr double TwoPi = 6.28318530717958647692;
+        ImVec2 previous;
+        bool previousVisible = false;
+        float bestDistance = std::numeric_limits<float>::infinity();
+
+        for (int index = 0; index <= Segments; ++index)
+        {
+            const double angle =
+                static_cast<double>(index) / Segments * TwoPi;
+            ImVec2 point;
+            const bool visible = camera.Project(
+                DecorationToWorld(RingPoint(
+                    center,
+                    ringFrame,
+                    axis,
+                    radius,
+                    angle
+                )),
+                viewport,
+                point
+            );
+            if (visible && previousVisible)
+            {
+                bestDistance = (std::min)(
+                    bestDistance,
+                    DistanceToSegment(mouse, previous, point)
+                );
+            }
+            previous = point;
+            previousVisible = visible;
+        }
+        return bestDistance;
+    }
+
     void DrawPreview(const Camera& camera, ImVec2 viewport, ImDrawList* draw)
     {
         AppSettings::Data& settings = AppSettings::Get();
 
-        Vec3 minimum =
+        DVec3 minimum =
         {
-            std::numeric_limits<float>::infinity(),
-            std::numeric_limits<float>::infinity(),
-            std::numeric_limits<float>::infinity()
+            std::numeric_limits<double>::infinity(),
+            std::numeric_limits<double>::infinity(),
+            std::numeric_limits<double>::infinity()
         };
-        Vec3 maximum =
+        DVec3 maximum =
         {
-            -std::numeric_limits<float>::infinity(),
-            -std::numeric_limits<float>::infinity(),
-            -std::numeric_limits<float>::infinity()
+            -std::numeric_limits<double>::infinity(),
+            -std::numeric_limits<double>::infinity(),
+            -std::numeric_limits<double>::infinity()
         };
 
         for (const PropPosition& prop : props)
@@ -1077,7 +1577,7 @@ namespace
             }
         }
 
-        const Vec3 decorationCorners[8] =
+        const DVec3 decorationCorners[8] =
         {
             { minimum.x, minimum.y, minimum.z },
             { maximum.x, minimum.y, minimum.z },
@@ -1159,12 +1659,14 @@ namespace
 
     void DrawManipulator(const Camera& camera, ImVec2 viewport, ImDrawList* draw)
     {
-        const Vec3 originDecoration =
-        {
-            anchorPosition[0],
-            anchorPosition[1],
-            anchorPosition[2]
-        };
+        const DVec3 originDecoration = manipulatorMode == 0
+            ? DVec3
+            {
+                anchorPosition[0],
+                anchorPosition[1],
+                anchorPosition[2]
+            }
+            : CalculateAveragePivot();
         const Vec3 originWorld = DecorationToWorld(originDecoration);
 
         ImVec2 originScreen;
@@ -1175,53 +1677,10 @@ namespace
         }
 
         const float distanceToCamera = Length(Subtract(originWorld, camera.position));
-        const float axisWorldLength = (std::max)(1.5f, distanceToCamera * 0.035f);
-        const Vec3 worldAxes[3] =
-        {
-            { axisWorldLength, 0.0f, 0.0f },
-            { 0.0f, 0.0f, axisWorldLength },
-            { 0.0f, axisWorldLength, 0.0f }
-        };
-
-        ImVec2 axisScreen[3];
-        bool axisVisible[3] = {};
-        for (int index = 0; index < 3; ++index)
-        {
-            axisVisible[index] = camera.Project(
-                Add(originWorld, worldAxes[index]),
-                viewport,
-                axisScreen[index]
-            );
-        }
-
         ImVec2 mouse = inputCaptured || activeAxis != 0
             ? wndMousePosition
             : ImGui::GetIO().MousePos;
-
         hoveredAxis = 0;
-        float bestDistance = 38.0f;
-        if (activeAxis == 0 && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow))
-        {
-            for (int index = 0; index < 3; ++index)
-            {
-                if (!axisVisible[index])
-                {
-                    continue;
-                }
-
-                const float distance = DistanceToSegment(
-                    mouse,
-                    originScreen,
-                    axisScreen[index]
-                );
-                if (distance < bestDistance)
-                {
-                    bestDistance = distance;
-                    hoveredAxis = index + 1;
-                }
-            }
-        }
-
         const ImU32 baseColors[3] =
         {
             ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.18f, 0.15f, 1.0f)),
@@ -1230,32 +1689,226 @@ namespace
         };
         const ImU32 highlight =
             ImGui::ColorConvertFloat4ToU32(ImVec4(0.0f, 0.95f, 1.0f, 1.0f));
+        const bool clicked =
+            clickPending ||
+            (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+                !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow));
+        clickPending = false;
 
-        for (int index = 0; index < 3; ++index)
+        if (manipulatorMode == 0)
         {
-            if (!axisVisible[index])
+            const float axisWorldLength =
+                (std::max)(1.5f, distanceToCamera * 0.035f);
+            const Vec3 worldAxes[3] =
             {
-                continue;
+                { axisWorldLength, 0.0f, 0.0f },
+                { 0.0f, 0.0f, axisWorldLength },
+                { 0.0f, axisWorldLength, 0.0f }
+            };
+
+            ImVec2 axisScreen[3];
+            bool axisVisible[3] = {};
+            for (int index = 0; index < 3; ++index)
+            {
+                axisVisible[index] = camera.Project(
+                    Add(originWorld, worldAxes[index]),
+                    viewport,
+                    axisScreen[index]
+                );
             }
 
-            const bool selected =
-                hoveredAxis == index + 1 ||
-                activeAxis == index + 1;
-            DrawArrow(
-                draw,
-                originScreen,
-                axisScreen[index],
-                selected ? highlight : baseColors[index],
-                selected ? 5.0f : 3.0f
-            );
-        }
+            float bestDistance = 38.0f;
+            if (activeAxis == 0 &&
+                !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow))
+            {
+                for (int index = 0; index < 3; ++index)
+                {
+                    if (!axisVisible[index])
+                    {
+                        continue;
+                    }
+                    const float distance = DistanceToSegment(
+                        mouse,
+                        originScreen,
+                        axisScreen[index]
+                    );
+                    if (distance < bestDistance)
+                    {
+                        bestDistance = distance;
+                        hoveredAxis = index + 1;
+                    }
+                }
+            }
 
-        draw->AddCircleFilled(
-            originScreen,
-            5.0f,
-            ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 0.95f)),
-            12
-        );
+            for (int index = 0; index < 3; ++index)
+            {
+                if (!axisVisible[index])
+                {
+                    continue;
+                }
+                const bool selected =
+                    hoveredAxis == index + 1 || activeAxis == index + 1;
+                DrawArrow(
+                    draw,
+                    originScreen,
+                    axisScreen[index],
+                    selected ? highlight : baseColors[index],
+                    selected ? 5.0f : 3.0f
+                );
+            }
+
+            draw->AddCircleFilled(
+                originScreen,
+                5.0f,
+                ImGui::ColorConvertFloat4ToU32(
+                    ImVec4(1.0f, 1.0f, 1.0f, 0.95f)
+                ),
+                12
+            );
+
+            if (clicked && activeAxis == 0 && hoveredAxis != 0)
+            {
+                activeAxis = hoveredAxis;
+                inputCaptured = true;
+                dragStartMouse = mouse;
+                dragStartAnchor[0] = anchorPosition[0];
+                dragStartAnchor[1] = anchorPosition[1];
+                dragStartAnchor[2] = anchorPosition[2];
+
+                const ImVec2 end = axisScreen[activeAxis - 1];
+                const float x = end.x - originScreen.x;
+                const float y = end.y - originScreen.y;
+                const float screenLength = std::sqrt(x * x + y * y);
+                if (screenLength > 1.0f)
+                {
+                    activeAxisDirection = ImVec2(
+                        x / screenLength,
+                        y / screenLength
+                    );
+                    activeDecoUnitsPerPixel =
+                        axisWorldLength / screenLength / DecorationScale;
+                    if (activeAxis == 3)
+                    {
+                        activeDecoUnitsPerPixel = -activeDecoUnitsPerPixel;
+                    }
+                }
+            }
+
+            if (activeAxis != 0 && mouseDown)
+            {
+                const float mouseX = mouse.x - dragStartMouse.x;
+                const float mouseY = mouse.y - dragStartMouse.y;
+                const float pixels =
+                    mouseX * activeAxisDirection.x +
+                    mouseY * activeAxisDirection.y;
+
+                float target[3] =
+                {
+                    dragStartAnchor[0],
+                    dragStartAnchor[1],
+                    dragStartAnchor[2]
+                };
+                target[activeAxis - 1] +=
+                    pixels * activeDecoUnitsPerPixel;
+                MoveAnchorTo(target);
+                status =
+                    "Moved the decoration group with the scene manipulator.";
+            }
+        }
+        else
+        {
+            const float ringWorldRadius =
+                (std::max)(1.0f, distanceToCamera * 0.025f);
+            const double ringDecorationRadius =
+                static_cast<double>(ringWorldRadius / DecorationScale);
+
+            if (activeAxis == 0 &&
+                !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow))
+            {
+                float bestDistance = 44.0f;
+                for (int index = 0; index < 3; ++index)
+                {
+                    const float distance = DistanceToRotationRing(
+                        camera,
+                        viewport,
+                        originDecoration,
+                        accumulatedGroupRotation,
+                        index,
+                        ringDecorationRadius,
+                        mouse
+                    );
+                    if (distance < bestDistance)
+                    {
+                        bestDistance = distance;
+                        hoveredAxis = index + 1;
+                    }
+                }
+            }
+
+            for (int index = 0; index < 3; ++index)
+            {
+                const bool selected =
+                    hoveredAxis == index + 1 || activeAxis == index + 1;
+                DrawRotationRing(
+                    draw,
+                    camera,
+                    viewport,
+                    originDecoration,
+                    accumulatedGroupRotation,
+                    index,
+                    ringDecorationRadius,
+                    selected ? highlight : baseColors[index],
+                    selected ? 3.5f : 2.0f
+                );
+            }
+
+            if (clicked && activeAxis == 0 && hoveredAxis != 0)
+            {
+                activeAxis = hoveredAxis;
+                inputCaptured = true;
+                dragStartMouse = mouse;
+                rotationDragStartGroupRotation =
+                    accumulatedGroupRotation;
+                CaptureRotationSnapshot();
+            }
+
+            if (activeAxis != 0 && mouseDown)
+            {
+                constexpr double DegreesToRadians =
+                    0.01745329251994329577;
+                const float mouseX = mouse.x - dragStartMouse.x;
+                const float mouseY = mouse.y - dragStartMouse.y;
+                const double deltaDegrees =
+                    static_cast<double>(
+                        (std::fabs(mouseX) >= std::fabs(mouseY)
+                            ? mouseX
+                            : -mouseY) * 0.5f
+                    );
+                const double direction = activeAxis == 3 ? 1.0 : -1.0;
+                const Mat3 localDelta = AxisRotation(
+                    activeAxis - 1,
+                    deltaDegrees * direction * DegreesToRadians
+                );
+                const Mat3 delta = Multiply(
+                    rotationDragStartGroupRotation,
+                    Multiply(
+                        localDelta,
+                        Transpose(rotationDragStartGroupRotation)
+                    )
+                );
+                ApplyRigidGroupRotation(delta);
+                accumulatedGroupRotation = Multiply(
+                    rotationDragStartGroupRotation,
+                    localDelta
+                );
+                GroupMatrixToEulerDegrees(
+                    accumulatedGroupRotation,
+                    groupRotationDegrees
+                );
+                status =
+                    "Rotated the decoration group with the scene manipulator.";
+            }
+        }
 
         if (hoveredAxis != 0 || activeAxis != 0)
         {
@@ -1263,60 +1916,12 @@ namespace
             ImGui::GetIO().WantCaptureMouse = true;
         }
 
-        const bool clicked =
-            clickPending ||
-            (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
-                !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow));
-        clickPending = false;
-
-        if (clicked && activeAxis == 0 && hoveredAxis != 0)
-        {
-            activeAxis = hoveredAxis;
-            inputCaptured = true;
-            dragStartMouse = mouse;
-            dragStartAnchor[0] = anchorPosition[0];
-            dragStartAnchor[1] = anchorPosition[1];
-            dragStartAnchor[2] = anchorPosition[2];
-
-            const ImVec2 end = axisScreen[activeAxis - 1];
-            const float x = end.x - originScreen.x;
-            const float y = end.y - originScreen.y;
-            const float screenLength = std::sqrt(x * x + y * y);
-            if (screenLength > 1.0f)
-            {
-                activeAxisDirection = ImVec2(x / screenLength, y / screenLength);
-                activeDecoUnitsPerPixel =
-                    axisWorldLength / screenLength / DecorationScale;
-                if (activeAxis == 3)
-                {
-                    activeDecoUnitsPerPixel = -activeDecoUnitsPerPixel;
-                }
-            }
-        }
-
-        if (activeAxis != 0 && mouseDown)
-        {
-            const float mouseX = mouse.x - dragStartMouse.x;
-            const float mouseY = mouse.y - dragStartMouse.y;
-            const float pixels =
-                mouseX * activeAxisDirection.x +
-                mouseY * activeAxisDirection.y;
-
-            float target[3] =
-            {
-                dragStartAnchor[0],
-                dragStartAnchor[1],
-                dragStartAnchor[2]
-            };
-            target[activeAxis - 1] += pixels * activeDecoUnitsPerPixel;
-            MoveAnchorTo(target);
-            status = "Moved the decoration group with the scene manipulator.";
-        }
-
         if (activeAxis != 0 && !mouseDown && inputCaptured)
         {
             activeAxis = 0;
             inputCaptured = false;
+            rotationDragStartPositions.clear();
+            rotationDragStartOrientations.clear();
         }
     }
 }
@@ -1406,8 +2011,24 @@ void MoveToolTab::Render()
     ImGui::Spacing();
 
     ImGui::Dummy(ImVec2(0.0f, 16.0f));
-    RenderSectionHeading("Position");
+    RenderSectionHeading("Position & Rotation");
 
+    if (ImGui::RadioButton("Move", &manipulatorMode, 0))
+    {
+        hoveredAxis = 0;
+        activeAxis = 0;
+        inputCaptured = false;
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Rotate", &manipulatorMode, 1))
+    {
+        hoveredAxis = 0;
+        activeAxis = 0;
+        inputCaptured = false;
+    }
+
+    ImGui::Text("Move");
+    ImGui::SameLine();
     ImGui::SetNextItemWidth(360.0f);
     if (hasXml)
     {
@@ -1442,6 +2063,51 @@ void MoveToolTab::Render()
     else
     {
         RenderDisabledButton("Move to Character");
+    }
+
+    ImGui::Dummy(ImVec2(0.0f, 10.0f));
+    ImGui::Text("Rotate");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(360.0f);
+    if (hasXml)
+    {
+        float editedRotation[3] =
+        {
+            groupRotationDegrees[0],
+            groupRotationDegrees[1],
+            groupRotationDegrees[2]
+        };
+        if (ImGui::InputFloat3(
+            "##GroupRotation",
+            editedRotation,
+            "%.3f"
+        ))
+        {
+            ApplyNumericGroupRotation(editedRotation);
+            status =
+                "Updated group rotation in X, Y, Z order.";
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip(
+                "Degrees. Numeric values apply in X, Y, Z order."
+            );
+        }
+    }
+    else
+    {
+        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+        ImGui::PushStyleVar(
+            ImGuiStyleVar_Alpha,
+            ImGui::GetStyle().Alpha * 0.5f
+        );
+        ImGui::InputFloat3(
+            "##GroupRotation",
+            groupRotationDegrees,
+            "%.3f"
+        );
+        ImGui::PopStyleVar();
+        ImGui::PopItemFlag();
     }
 
     ImGui::Dummy(ImVec2(0.0f, 16.0f));
@@ -1568,6 +2234,13 @@ void MoveToolTab::ClearImportedData()
     mouseDown = false;
     clickPending = false;
     activeDecoUnitsPerPixel = 0.0f;
+    manipulatorMode = 0;
+    groupRotationDegrees[0] = 0.0f;
+    groupRotationDegrees[1] = 0.0f;
+    groupRotationDegrees[2] = 0.0f;
+    accumulatedGroupRotation = IdentityMatrix();
+    rotationDragStartPositions.clear();
+    rotationDragStartOrientations.clear();
 }
 
 UINT MoveToolTab::WndProc(HWND, UINT message, WPARAM, LPARAM lParam)
@@ -1609,6 +2282,8 @@ UINT MoveToolTab::WndProc(HWND, UINT message, WPARAM, LPARAM lParam)
         {
             inputCaptured = false;
             activeAxis = 0;
+            rotationDragStartPositions.clear();
+            rotationDragStartOrientations.clear();
             return 0;
         }
     }
