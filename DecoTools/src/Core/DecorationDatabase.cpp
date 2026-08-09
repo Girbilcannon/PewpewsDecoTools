@@ -1459,7 +1459,7 @@ namespace
         file << "{\n";
         file << "  \"Version\": 1,\n";
         file << "  \"GeneratedAtUtc\": \"2026-07-30T00:00:00Z\",\n";
-        file << "  \"GeneratedBy\": \"Pewpew's Deco Tools 1.2.0.2 built-in seed\",\n";
+        file << "  \"GeneratedBy\": \"Pewpew's Deco Tools 1.2.1.3 built-in seed\",\n";
         file << "  \"SourceSnapshot\": {\n";
         file << "    \"GuildUpgradeIds\": [";
         size_t written = 0;

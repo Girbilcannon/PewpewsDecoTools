@@ -173,6 +173,7 @@
     <ClCompile Include="src\UI\DecorationCounterWindow.cpp" />
     <ClCompile Include="src\UI\Tabs\MapSwapTab.cpp" />
     <ClCompile Include="src\UI\Tabs\MergeExtractTab.cpp" />
+    <ClCompile Include="src\UI\Tabs\GroupMoverTab.cpp" />
     <ClCompile Include="src\UI\Tabs\MoveToolTab.cpp" />
     <ClCompile Include="src\UI\Tabs\SettingsTab.cpp" />
   </ItemGroup>
@@ -196,6 +197,7 @@
     <ClInclude Include="src\UI\DecorationCounterWindow.h" />
     <ClInclude Include="src\UI\Tabs\MapSwapTab.h" />
     <ClInclude Include="src\UI\Tabs\MergeExtractTab.h" />
+    <ClInclude Include="src\UI\Tabs\GroupMoverTab.h" />
     <ClInclude Include="src\UI\Tabs\MoveToolTab.h" />
     <ClInclude Include="src\UI\Tabs\SettingsTab.h" />
   </ItemGroup>

@@ -16,6 +16,7 @@
 #include "UI/MainWindow.h"
 #include "UI/DecorationCounterWindow.h"
 #include "UI/Tabs/MapSwapTab.h"
+#include "UI/Tabs/GroupMoverTab.h"
 #include "UI/Tabs/MergeExtractTab.h"
 #include "UI/Tabs/MoveToolTab.h"
 
@@ -59,12 +60,12 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef()
 
     addonDefinition.Version.Major = 1;
     addonDefinition.Version.Minor = 2;
-    addonDefinition.Version.Build = 0;
-    addonDefinition.Version.Revision = 2;
+    addonDefinition.Version.Build = 1;
+    addonDefinition.Version.Revision = 3;
 
     addonDefinition.Author = "Girbilcannon.8259";
     addonDefinition.Description =
-        "Move, Merge, Replicate, and  Map Swap large decoration builds for Homesteads and Guild Halls. Migrated directly from GW2DecoTools.com.";
+        "Move, Group, Merge, Extract, and Map Swap large decoration builds for Homesteads and Guild Halls.";
 
     addonDefinition.Load = AddonLoad;
     addonDefinition.Unload = AddonUnload;
@@ -128,7 +129,7 @@ namespace
         nexusApi->Log(
             LOGL_INFO,
             AddonName,
-            "Pewpew's Deco Tools 1.2.0.2 loaded."
+            "Pewpew's Deco Tools 1.2.1.3 loaded."
         );
     }
 
@@ -175,6 +176,7 @@ namespace
         AppSettings::Update();
         MainWindow::Render();
         MoveToolTab::RenderOverlay();
+        GroupMoverTab::RenderOverlay();
         MergeExtractTab::RenderOverlay();
     }
 
@@ -203,6 +205,10 @@ namespace
 
     UINT AddonWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
     {
+        if (GroupMoverTab::WndProc(window, message, wParam, lParam) == 0)
+        {
+            return 0;
+        }
         if (MergeExtractTab::WndProc(window, message, wParam, lParam) == 0)
         {
             return 0;

@@ -8,6 +8,7 @@
 #include "../imgui/imgui.h"
 #include "DecorationCounterWindow.h"
 #include "Tabs/MapSwapTab.h"
+#include "Tabs/GroupMoverTab.h"
 #include "Tabs/MergeExtractTab.h"
 #include "Tabs/MoveToolTab.h"
 #include "Tabs/SettingsTab.h"
@@ -19,6 +20,7 @@ namespace
         None,
         MoveTool,
         MapSwap,
+        GroupMover,
         MergeExtract,
         Settings
     };
@@ -39,6 +41,10 @@ namespace
         else if (activeTab == ActiveTab::MapSwap)
         {
             MapSwapTab::ClearImportedData();
+        }
+        else if (activeTab == ActiveTab::GroupMover)
+        {
+            GroupMoverTab::ClearImportedData();
         }
         else if (activeTab == ActiveTab::MergeExtract)
         {
@@ -63,7 +69,7 @@ void MainWindow::Render()
     const bool wasVisible = settings.windowVisible;
     if (ImGui::Begin("Pewpew's Deco Tools", &settings.windowVisible))
     {
-        if (ImGui::BeginTabBar("DecoToolsTabs"))
+        if (ImGui::BeginTabBar("DecoToolsTabs##v1212"))
         {
             if (ImGui::BeginTabItem("Move Tool"))
             {
@@ -79,10 +85,17 @@ void MainWindow::Render()
                 ImGui::EndTabItem();
             }
 
-            if (ImGui::BeginTabItem("Merge / Extract"))
+            if (ImGui::BeginTabItem("Group/Extract/Merge"))
             {
                 ActivateTab(ActiveTab::MergeExtract);
                 MergeExtractTab::Render();
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Group Mover"))
+            {
+                ActivateTab(ActiveTab::GroupMover);
+                GroupMoverTab::Render();
                 ImGui::EndTabItem();
             }
 

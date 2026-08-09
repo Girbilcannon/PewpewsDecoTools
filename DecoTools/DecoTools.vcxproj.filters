@@ -82,6 +82,9 @@
     <ClCompile Include="src\UI\Tabs\MergeExtractTab.cpp">
       <Filter>Source Files\UI\Tabs</Filter>
     </ClCompile>
+    <ClCompile Include="src\UI\Tabs\GroupMoverTab.cpp">
+      <Filter>Source Files\UI\Tabs</Filter>
+    </ClCompile>
     <ClCompile Include="src\UI\Tabs\MoveToolTab.cpp">
       <Filter>Source Files\UI\Tabs</Filter>
     </ClCompile>
@@ -145,6 +148,9 @@
       <Filter>Header Files\UI\Tabs</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\Tabs\MergeExtractTab.h">
+      <Filter>Header Files\UI\Tabs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\Tabs\GroupMoverTab.h">
       <Filter>Header Files\UI\Tabs</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\Tabs\MoveToolTab.h">
