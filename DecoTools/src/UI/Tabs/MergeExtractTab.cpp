@@ -8,9 +8,11 @@
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
 #include "../../Core/Utf8Paths.h"
+#include "../../Core/XmlFileUtils.h"
 #include "../../imgui/imgui.h"
 #include "../../imgui/imgui_internal.h"
 #include "../DecorationCounterWindow.h"
+#include "../XmlComboHelpers.h"
 
 #include <algorithm>
 #include <array>
@@ -38,11 +40,7 @@ namespace
         float z = 0.0f;
     };
 
-    struct XmlFileEntry
-    {
-        std::string name;
-        std::string path;
-    };
+    using XmlFileEntry = XmlFileUtils::Entry;
 
     struct Prop
     {
@@ -94,6 +92,7 @@ namespace
     int extractXmlIndex = -1;
     int groupXmlIndex = -1;
     bool fileListInitialized = false;
+    bool listedSubFolders = false;
     std::vector<XmlFileEntry> availableXmlFiles;
     std::vector<unsigned char> additionalSelected;
     std::vector<XmlDocument> mergeDocuments;
@@ -261,17 +260,6 @@ namespace
             : settings.homesteadFolder.data();
     }
 
-    bool HasXmlExtension(const std::filesystem::path& path)
-    {
-        std::string extension = path.extension().string();
-        std::transform(extension.begin(), extension.end(), extension.begin(),
-            [](unsigned char character)
-            {
-                return static_cast<char>(std::tolower(character));
-            });
-        return extension == ".xml";
-    }
-
     void ClearLoaded()
     {
         std::vector<XmlDocument>().swap(mergeDocuments);
@@ -302,6 +290,7 @@ namespace
         extractXmlIndex = -1;
         groupXmlIndex = -1;
         fileListInitialized = true;
+        listedSubFolders = AppSettings::Get().showXmlsFromSubFolders;
 
         const std::string folder = FolderForType(selectedFolderType);
         if (folder.empty())
@@ -310,31 +299,15 @@ namespace
             return;
         }
 
-        std::error_code error;
-        if (!std::filesystem::is_directory(folder, error))
+        if (!XmlFileUtils::List(
+            folder,
+            AppSettings::Get().showXmlsFromSubFolders,
+            availableXmlFiles
+        ))
         {
-            status = "XML folder not found. Check the path in Settings.";
+            status = "XML folder not found or could not be read. Check the path in Settings.";
             return;
         }
-
-        for (std::filesystem::directory_iterator iterator(folder, error), end;
-            !error && iterator != end;
-            iterator.increment(error))
-        {
-            if (iterator->is_regular_file(error) && HasXmlExtension(iterator->path()))
-            {
-                availableXmlFiles.push_back(
-                    {
-                        Utf8Paths::ToUtf8(iterator->path().filename()),
-                        Utf8Paths::ToUtf8(iterator->path())
-                    });
-            }
-        }
-        std::sort(availableXmlFiles.begin(), availableXmlFiles.end(),
-            [](const XmlFileEntry& left, const XmlFileEntry& right)
-            {
-                return left.name < right.name;
-            });
         additionalSelected.assign(availableXmlFiles.size(), false);
         if (!availableXmlFiles.empty())
         {
@@ -548,24 +521,6 @@ namespace
     std::string Stem(const std::string& fileName)
     {
         return Utf8Paths::ToUtf8(Utf8Paths::FromUtf8(fileName).stem());
-    }
-
-    std::filesystem::path IndexedPath(
-        const std::filesystem::path& folder,
-        const std::string& stem,
-        const std::string& suffix
-    )
-    {
-        std::error_code error;
-        std::filesystem::path output = folder /
-            Utf8Paths::FromUtf8(stem + suffix + "1.xml");
-        for (int index = 2; std::filesystem::exists(output, error); ++index)
-        {
-            output = folder / Utf8Paths::FromUtf8(
-                stem + suffix + std::to_string(index) + ".xml"
-            );
-        }
-        return output;
     }
 
     bool WriteFile(
@@ -850,7 +805,8 @@ namespace
         const std::filesystem::path folder =
             Utf8Paths::FromUtf8(base.path).parent_path();
         const std::filesystem::path output =
-            IndexedPath(folder, Stem(base.fileName), "_MERGED");
+            XmlFileUtils::IndexedOperationPath(
+                folder, Stem(base.fileName), "_MERGED");
         std::string error;
         if (WriteFile(output, merged, error))
         {
@@ -1110,7 +1066,8 @@ namespace
 
         std::string error;
         const std::filesystem::path strippedPath =
-            IndexedPath(folder, Stem(extractDocument.fileName), "_STRIPPED");
+            XmlFileUtils::IndexedOperationPath(
+                folder, Stem(extractDocument.fileName), "_STRIPPED");
         if (!WriteFile(strippedPath, stripped, error))
         {
             status = error;
@@ -1132,7 +1089,7 @@ namespace
                 extractDocument.source.substr(0, extractDocument.rootOpenEnd + 1) +
                 body.str() +
                 extractDocument.source.substr(extractDocument.rootCloseStart);
-            const std::filesystem::path output = IndexedPath(
+            const std::filesystem::path output = XmlFileUtils::IndexedOperationPath(
                 folder, SafeFileStem(group->name), "_EXTRACTED");
             if (!WriteFile(output, outputXml, error))
             {
@@ -1169,6 +1126,7 @@ namespace
             ? availableXmlFiles[static_cast<size_t>(selectedIndex)].name.c_str()
             : "No XML files found";
         ImGui::SetNextItemWidth(-1.0f);
+        XmlComboHelpers::SetPopupWidth(availableXmlFiles);
         if (ImGui::BeginCombo(id, label))
         {
             for (size_t index = 0; index < availableXmlFiles.size(); ++index)
@@ -1190,7 +1148,11 @@ namespace
 
 void MergeExtractTab::Render()
 {
-    if (!fileListInitialized) RefreshXmlList();
+    if (!fileListInitialized ||
+        listedSubFolders != AppSettings::Get().showXmlsFromSubFolders)
+    {
+        RefreshXmlList();
+    }
 
     ImGui::TextWrapped(
         "Choose the operation you need to perform:"

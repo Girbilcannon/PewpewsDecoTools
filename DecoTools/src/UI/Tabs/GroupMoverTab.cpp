@@ -8,7 +8,9 @@
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
 #include "../../Core/Utf8Paths.h"
+#include "../../Core/XmlFileUtils.h"
 #include "../DecorationCounterWindow.h"
+#include "../XmlComboHelpers.h"
 #include "../../imgui/imgui.h"
 #include "../../imgui/imgui_internal.h"
 
@@ -82,11 +84,7 @@ namespace
         int type;
     };
 
-    struct XmlFileEntry
-    {
-        std::string name;
-        std::string path;
-    };
+    using XmlFileEntry = XmlFileUtils::Entry;
 
     struct Camera
     {
@@ -113,6 +111,7 @@ namespace
     int selectedFolderType = 0;
     int selectedXmlIndex = -1;
     bool fileListInitialized = false;
+    bool listedSubFolders = false;
 
     int hoveredAxis = 0;
     int activeAxis = 0;
@@ -878,44 +877,6 @@ namespace
         return text;
     }
 
-    std::string ExportBaseName(const std::string& fileName)
-    {
-        std::string baseName = Utf8Paths::ToUtf8(
-            Utf8Paths::FromUtf8(fileName).stem()
-        );
-        std::string upperName = baseName;
-        std::transform(
-            upperName.begin(),
-            upperName.end(),
-            upperName.begin(),
-            [](unsigned char character)
-            {
-                return static_cast<char>(std::toupper(character));
-            }
-        );
-
-        size_t suffixStart = upperName.size();
-        while (suffixStart > 0 &&
-            std::isdigit(static_cast<unsigned char>(upperName[suffixStart - 1])) != 0)
-        {
-            --suffixStart;
-        }
-
-        constexpr const char* movedSuffix = "_MOVED";
-        constexpr size_t movedSuffixLength = 6;
-        if (suffixStart >= movedSuffixLength &&
-            upperName.compare(
-                suffixStart - movedSuffixLength,
-                movedSuffixLength,
-                movedSuffix
-            ) == 0)
-        {
-            baseName.erase(suffixStart - movedSuffixLength);
-        }
-
-        return baseName;
-    }
-
     std::string BuildUpdatedXml()
     {
         struct Replacement
@@ -1051,21 +1012,6 @@ namespace
             : settings.homesteadFolder.data();
     }
 
-    bool HasXmlExtension(const std::filesystem::path& path)
-    {
-        std::string extension = path.extension().string();
-        std::transform(
-            extension.begin(),
-            extension.end(),
-            extension.begin(),
-            [](unsigned char character)
-            {
-                return static_cast<char>(std::tolower(character));
-            }
-        );
-        return extension == ".xml";
-    }
-
     void RefreshXmlList()
     {
         const std::string folder = FolderForType(selectedFolderType);
@@ -1078,6 +1024,7 @@ namespace
         availableXmlFiles.clear();
         selectedXmlIndex = -1;
         fileListInitialized = true;
+        listedSubFolders = AppSettings::Get().showXmlsFromSubFolders;
 
         if (folder.empty())
         {
@@ -1085,68 +1032,15 @@ namespace
             return;
         }
 
-        std::error_code error;
-        const std::filesystem::path directory(folder);
-        if (!std::filesystem::is_directory(directory, error))
+        if (!XmlFileUtils::List(
+            folder,
+            AppSettings::Get().showXmlsFromSubFolders,
+            availableXmlFiles
+        ))
         {
-            status = "XML folder not found. Check the path in Settings.";
+            status = "XML folder not found or could not be read. Check the path in Settings.";
             return;
         }
-
-        std::filesystem::directory_iterator iterator(directory, error);
-        const std::filesystem::directory_iterator end;
-        while (!error && iterator != end)
-        {
-            const std::filesystem::directory_entry& entry = *iterator;
-            if (entry.is_regular_file(error) && !error &&
-                HasXmlExtension(entry.path()))
-            {
-                availableXmlFiles.push_back(
-                    {
-                        Utf8Paths::ToUtf8(entry.path().filename()),
-                        Utf8Paths::ToUtf8(entry.path())
-                    }
-                );
-            }
-
-            iterator.increment(error);
-        }
-
-        if (error)
-        {
-            availableXmlFiles.clear();
-            status = "The XML folder could not be read.";
-            return;
-        }
-
-        std::sort(
-            availableXmlFiles.begin(),
-            availableXmlFiles.end(),
-            [](const XmlFileEntry& left, const XmlFileEntry& right)
-            {
-                std::string leftName = left.name;
-                std::string rightName = right.name;
-                std::transform(
-                    leftName.begin(),
-                    leftName.end(),
-                    leftName.begin(),
-                    [](unsigned char value)
-                    {
-                        return static_cast<char>(std::tolower(value));
-                    }
-                );
-                std::transform(
-                    rightName.begin(),
-                    rightName.end(),
-                    rightName.begin(),
-                    [](unsigned char value)
-                    {
-                        return static_cast<char>(std::tolower(value));
-                    }
-                );
-                return leftName < rightName;
-            }
-        );
 
         for (size_t index = 0; index < availableXmlFiles.size(); ++index)
         {
@@ -1170,7 +1064,8 @@ namespace
 
     void InitializeXmlList()
     {
-        if (fileListInitialized)
+        if (fileListInitialized &&
+            listedSubFolders == AppSettings::Get().showXmlsFromSubFolders)
         {
             return;
         }
@@ -2160,10 +2055,6 @@ void GroupMoverTab::Render()
             "Import a grouped scene, select one or more existing groups, then move or rotate them directly inside the same XML."
         );
         ImGui::Dummy(ImVec2(0.0f, 10.0f));
-        ImGui::TextWrapped(
-            "NOTE: Use the Group/Extract/Merge tab to create groups."
-        );
-        ImGui::Dummy(ImVec2(0.0f, 10.0f));
         if (ImGui::RadioButton("Homestead##GroupMover", &selectedFolderType, 0))
         {
             RefreshXmlList();
@@ -2181,6 +2072,7 @@ void GroupMoverTab::Render()
             ? availableXmlFiles[static_cast<size_t>(selectedXmlIndex)].name.c_str()
             : "No XML files available";
         ImGui::SetNextItemWidth(-1.0f);
+        XmlComboHelpers::SetPopupWidth(availableXmlFiles);
         if (ImGui::BeginCombo("##GroupMoverXmlFileList", selectedName))
         {
             for (size_t index = 0; index < availableXmlFiles.size(); ++index)

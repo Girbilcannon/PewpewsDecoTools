@@ -259,6 +259,8 @@ namespace
 
         settings.checkForDatabaseUpdates =
             FindBool(json, "checkForDatabaseUpdates", settings.checkForDatabaseUpdates);
+        settings.showXmlsFromSubFolders =
+            FindBool(json, "showXmlsFromSubFolders", settings.showXmlsFromSubFolders);
         settings.rememberWindowState =
             FindBool(json, "rememberWindowState", settings.rememberWindowState);
         settings.windowVisible =
@@ -338,10 +340,12 @@ void AppSettings::SaveNow()
 
     file << std::setprecision(9);
     file << "{\n";
-    file << "  \"version\": \"1.2.1.3\",\n";
+    file << "  \"version\": \"1.2.1.4\",\n";
     file << "  \"apiKey\": \"" << JsonEscape(settings.apiKey.data()) << "\",\n";
     file << "  \"homesteadFolder\": \"" << JsonEscape(settings.homesteadFolder.data()) << "\",\n";
     file << "  \"guildHallFolder\": \"" << JsonEscape(settings.guildHallFolder.data()) << "\",\n";
+    file << "  \"showXmlsFromSubFolders\": "
+        << (settings.showXmlsFromSubFolders ? "true" : "false") << ",\n";
     file << "  \"checkForDatabaseUpdates\": "
         << (settings.checkForDatabaseUpdates ? "true" : "false") << ",\n";
     file << "  \"rememberWindowState\": "

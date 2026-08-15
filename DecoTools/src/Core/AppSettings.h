@@ -14,6 +14,7 @@ namespace AppSettings
         std::array<char, 512> homesteadFolder = {};
         std::array<char, 512> guildHallFolder = {};
 
+        bool showXmlsFromSubFolders = false;
         bool checkForDatabaseUpdates = true;
         bool rememberWindowState = true;
         bool windowVisible = true;

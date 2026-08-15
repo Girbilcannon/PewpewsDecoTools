@@ -45,6 +45,16 @@ void SettingsTab::Render()
     ImGui::Dummy(ImVec2(0.0f, 16.0f));
     RenderSectionHeading("Default XML Folders");
 
+    if (ImGui::Checkbox(
+        "Show XMLs from Sub-Folders",
+        &settings.showXmlsFromSubFolders
+    ))
+    {
+        AppSettings::MarkDirty();
+    }
+
+    ImGui::Spacing();
+
     ImGui::Text("Homestead");
     ImGui::SetNextItemWidth(-1.0f);
     if (ImGui::InputText(

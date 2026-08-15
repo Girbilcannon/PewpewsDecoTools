@@ -185,6 +185,7 @@
     <ClInclude Include="src\Core\DecorationDatabase.h" />
     <ClInclude Include="src\Core\Gw2Api.h" />
     <ClInclude Include="src\Core\Utf8Paths.h" />
+    <ClInclude Include="src\Core\XmlFileUtils.h" />
     <ClInclude Include="src\imgui\imconfig.h" />
     <ClInclude Include="src\imgui\imgui.h" />
     <ClInclude Include="src\imgui\imgui_internal.h" />
@@ -195,6 +196,7 @@
     <ClInclude Include="src\nexus\Nexus.h" />
     <ClInclude Include="src\UI\MainWindow.h" />
     <ClInclude Include="src\UI\DecorationCounterWindow.h" />
+    <ClInclude Include="src\UI\XmlComboHelpers.h" />
     <ClInclude Include="src\UI\Tabs\MapSwapTab.h" />
     <ClInclude Include="src\UI\Tabs\MergeExtractTab.h" />
     <ClInclude Include="src\UI\Tabs\GroupMoverTab.h" />

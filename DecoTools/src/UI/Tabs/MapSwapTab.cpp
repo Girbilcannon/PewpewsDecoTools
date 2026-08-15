@@ -8,7 +8,9 @@
 #include "../../Core/DecorationDatabase.h"
 #include "../../Core/Gw2Api.h"
 #include "../../Core/Utf8Paths.h"
+#include "../../Core/XmlFileUtils.h"
 #include "../DecorationCounterWindow.h"
+#include "../XmlComboHelpers.h"
 #include "../../imgui/imgui.h"
 #include "../../imgui/imgui_internal.h"
 
@@ -33,11 +35,7 @@ namespace
         int type;
     };
 
-    struct XmlFileEntry
-    {
-        std::string name;
-        std::string path;
-    };
+    using XmlFileEntry = XmlFileUtils::Entry;
 
     struct Prop
     {
@@ -121,6 +119,7 @@ namespace
     int selectedDestinationIndex = 0;
     int selectedGuildIndex = -1;
     bool fileListInitialized = false;
+    bool listedSubFolders = false;
     bool includeMissing = true;
     bool guildLoadAttempted = false;
 
@@ -177,21 +176,6 @@ namespace
             : settings.homesteadFolder.data();
     }
 
-    bool HasXmlExtension(const std::filesystem::path& path)
-    {
-        std::string extension = path.extension().string();
-        std::transform(
-            extension.begin(),
-            extension.end(),
-            extension.begin(),
-            [](unsigned char character)
-            {
-                return static_cast<char>(std::tolower(character));
-            }
-        );
-        return extension == ".xml";
-    }
-
     void InvalidatePrecheck()
     {
         precheck = {};
@@ -210,6 +194,7 @@ namespace
         availableXmlFiles.clear();
         selectedXmlIndex = -1;
         fileListInitialized = true;
+        listedSubFolders = AppSettings::Get().showXmlsFromSubFolders;
 
         if (folder.empty())
         {
@@ -217,38 +202,15 @@ namespace
             return;
         }
 
-        std::error_code error;
-        const std::filesystem::path directory(folder);
-        if (!std::filesystem::is_directory(directory, error))
+        if (!XmlFileUtils::List(
+            folder,
+            AppSettings::Get().showXmlsFromSubFolders,
+            availableXmlFiles
+        ))
         {
-            status = "XML folder not found. Check the path in Settings.";
+            status = "XML folder not found or could not be read. Check the path in Settings.";
             return;
         }
-
-        for (std::filesystem::directory_iterator iterator(directory, error), end;
-            !error && iterator != end;
-            iterator.increment(error))
-        {
-            const std::filesystem::directory_entry& entry = *iterator;
-            if (entry.is_regular_file(error) && !error && HasXmlExtension(entry.path()))
-            {
-                availableXmlFiles.push_back(
-                    {
-                        Utf8Paths::ToUtf8(entry.path().filename()),
-                        Utf8Paths::ToUtf8(entry.path())
-                    }
-                );
-            }
-        }
-
-        std::sort(
-            availableXmlFiles.begin(),
-            availableXmlFiles.end(),
-            [](const XmlFileEntry& left, const XmlFileEntry& right)
-            {
-                return left.name < right.name;
-            }
-        );
 
         for (size_t index = 0; index < availableXmlFiles.size(); ++index)
         {
@@ -1163,7 +1125,8 @@ void MapSwapTab::Render()
 {
     PollJob();
 
-    if (!fileListInitialized)
+    if (!fileListInitialized ||
+        listedSubFolders != AppSettings::Get().showXmlsFromSubFolders)
     {
         RefreshXmlList();
     }
@@ -1203,6 +1166,7 @@ void MapSwapTab::Render()
         ? availableXmlFiles[static_cast<size_t>(selectedXmlIndex)].name.c_str()
         : "No XML files found";
     ImGui::SetNextItemWidth(-1.0f);
+    XmlComboHelpers::SetPopupWidth(availableXmlFiles);
     if (ImGui::BeginCombo("##SwapXmlList", selectedFileLabel))
     {
         for (size_t index = 0; index < availableXmlFiles.size(); ++index)
