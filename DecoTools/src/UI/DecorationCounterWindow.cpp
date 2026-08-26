@@ -5,6 +5,7 @@
 #include "DecorationCounterWindow.h"
 
 #include "../Core/AppSettings.h"
+#include "../Core/DecorationDatabase.h"
 #include "../Core/Gw2Api.h"
 #include "../imgui/imgui.h"
 
@@ -204,8 +205,8 @@ namespace
         file << context << "\n";
         file << std::string(context.size(), '-') << "\n\n";
         file << std::left << std::setw(static_cast<int>(width))
-            << "Decoration" << " | Required | Available\n";
-        file << std::string(width, '-') << "-+----------+----------\n";
+            << "Decoration" << " | Required | Available | Max Count\n";
+        file << std::string(width, '-') << "-+----------+-----------+----------\n";
         for (const auto& item : requirements)
         {
             file << std::left << std::setw(static_cast<int>(width)) << item.name
@@ -219,6 +220,11 @@ namespace
             {
                 file << std::setw(9) << "N/A";
             }
+            file << " | ";
+            const int maxCount =
+                DecorationDatabase::FindMaxCountById(item.id, decorationType);
+            if (maxCount >= 0) file << std::setw(9) << maxCount;
+            else file << std::setw(9) << "N/A";
             file << "\n";
         }
         status = "Exported " + output.filename().string() + ".";
@@ -286,6 +292,20 @@ void DecorationCounterWindow::SetResolvedRequirements(
     status = "Decoration counts loaded.";
 }
 
+void DecorationCounterWindow::UpdateRequirements(
+    const std::string& newContext,
+    const std::vector<Requirement>& newRequirements
+)
+{
+    context = newContext;
+    requirements = newRequirements;
+    std::sort(requirements.begin(), requirements.end(),
+        [](const Requirement& left, const Requirement& right)
+        {
+            return left.name < right.name;
+        });
+}
+
 void DecorationCounterWindow::Clear()
 {
     ++generation;
@@ -305,7 +325,7 @@ void DecorationCounterWindow::Render()
     AppSettings::Data& settings = AppSettings::Get();
     if (!settings.showDecorationCounter) return;
 
-    ImGui::SetNextWindowSize(ImVec2(500.0f, 390.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(610.0f, 390.0f), ImGuiCond_FirstUseEver);
     bool open = settings.showDecorationCounter;
     if (ImGui::Begin("Decoration Count", &open))
     {
@@ -346,12 +366,14 @@ void DecorationCounterWindow::Render()
         }
         ImGui::Separator();
 
-        ImGui::Columns(3, "##CounterColumns", false);
-        ImGui::SetColumnWidth(0, 310.0f);
+        ImGui::Columns(4, "##CounterColumns", false);
+        ImGui::SetColumnWidth(0, 330.0f);
         ImGui::SetColumnWidth(1, 80.0f);
+        ImGui::SetColumnWidth(2, 80.0f);
         ImGui::TextUnformatted("Decoration"); ImGui::NextColumn();
         ImGui::TextUnformatted("Required"); ImGui::NextColumn();
         ImGui::TextUnformatted("Available"); ImGui::NextColumn();
+        ImGui::TextUnformatted("Max Count"); ImGui::NextColumn();
         ImGui::Separator();
 
         for (const Requirement& item : requirements)
@@ -359,13 +381,25 @@ void DecorationCounterWindow::Render()
             const auto found = available.find(item.id);
             const int count = found == available.end() ? 0 : found->second;
             const bool missing = availabilityKnown && count < item.required;
-            if (missing) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.28f, 0.28f, 1.0f));
+            const int maxCount =
+                DecorationDatabase::FindMaxCountById(item.id, decorationType);
+            const bool atMaximum = maxCount >= 0 && item.required >= maxCount;
+            if (missing || atMaximum)
+            {
+                ImGui::PushStyleColor(
+                    ImGuiCol_Text,
+                    ImVec4(1.0f, 0.28f, 0.28f, 1.0f)
+                );
+            }
             ImGui::TextUnformatted(item.name.c_str()); ImGui::NextColumn();
             ImGui::Text("%d", item.required); ImGui::NextColumn();
             if (availabilityKnown) ImGui::Text("%d", count);
             else ImGui::TextUnformatted("-");
             ImGui::NextColumn();
-            if (missing) ImGui::PopStyleColor();
+            if (maxCount >= 0) ImGui::Text("%d", maxCount);
+            else ImGui::TextUnformatted("-");
+            ImGui::NextColumn();
+            if (missing || atMaximum) ImGui::PopStyleColor();
         }
         ImGui::Columns(1);
         ImGui::Separator();

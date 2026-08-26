@@ -11,7 +11,9 @@
 #include <winhttp.h>
 
 #include <cctype>
+#include <algorithm>
 #include <sstream>
+#include <vector>
 
 #pragma comment(lib, "Winhttp.lib")
 
@@ -51,14 +53,8 @@ namespace
     )
     {
         error.clear();
-        if (apiKey.empty())
-        {
-            error = "Enter an API key in Settings first.";
-            return {};
-        }
-
         HINTERNET session = WinHttpOpen(
-            L"PewpewsDecoTools/1.2.1.4",
+            L"PewpewsDecoTools/1.3.0.5",
             WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
             WINHTTP_NO_PROXY_NAME,
             WINHTTP_NO_PROXY_BYPASS,
@@ -85,9 +81,11 @@ namespace
                 WINHTTP_FLAG_SECURE
             );
 
-        const std::wstring headers =
-            L"Authorization: Bearer " + Utf8ToWide(apiKey) +
-            L"\r\nAccept: application/json\r\n";
+        std::wstring headers = L"Accept: application/json\r\n";
+        if (!apiKey.empty())
+        {
+            headers += L"Authorization: Bearer " + Utf8ToWide(apiKey) + L"\r\n";
+        }
         bool succeeded = request != nullptr &&
             WinHttpSendRequest(
                 request,
@@ -273,6 +271,35 @@ namespace
         return result;
     }
 
+    std::vector<int> ParseIdArray(const std::string& json)
+    {
+        std::vector<int> result;
+        size_t position = 0;
+        while (position < json.size())
+        {
+            while (position < json.size() &&
+                (std::isspace(static_cast<unsigned char>(json[position])) != 0 ||
+                    json[position] == '[' || json[position] == ']' ||
+                    json[position] == ','))
+            {
+                ++position;
+            }
+            if (position >= json.size()) break;
+            try
+            {
+                size_t consumed = 0;
+                const int id = std::stoi(json.substr(position), &consumed);
+                if (id > 0) result.push_back(id);
+                position += consumed;
+            }
+            catch (...)
+            {
+                break;
+            }
+        }
+        return result;
+    }
+
     std::map<int, int> ParseCountObjects(const std::string& json)
     {
         std::map<int, int> result;
@@ -366,5 +393,64 @@ bool Gw2Api::LoadCounts(
 
     const std::map<int, int> parsed = ParseCountObjects(json);
     for (const auto& [id, count] : parsed) counts[id] = count;
+    return true;
+}
+
+bool Gw2Api::LoadHomesteadDecorationDefinitions(
+    std::vector<HomesteadDecorationDefinition>& definitions,
+    std::string& error
+)
+{
+    definitions.clear();
+    const std::string idJson = Get(L"/v2/homestead/decorations", {}, error);
+    if (!error.empty()) return false;
+
+    const std::vector<int> ids = ParseIdArray(idJson);
+    if (ids.empty())
+    {
+        error = "The Guild Wars 2 API returned no Homestead decoration IDs.";
+        return false;
+    }
+
+    constexpr size_t BatchSize = 150;
+    for (size_t batchStart = 0; batchStart < ids.size(); batchStart += BatchSize)
+    {
+        std::wostringstream path;
+        path << L"/v2/homestead/decorations?ids=";
+        const size_t batchEnd = (std::min)(ids.size(), batchStart + BatchSize);
+        for (size_t index = batchStart; index < batchEnd; ++index)
+        {
+            if (index != batchStart) path << L',';
+            path << ids[index];
+        }
+
+        const std::string json = Get(path.str(), {}, error);
+        if (!error.empty()) return false;
+
+        size_t position = 0;
+        while (true)
+        {
+            const size_t begin = json.find('{', position);
+            if (begin == std::string::npos) break;
+            const size_t end = FindObjectEnd(json, begin);
+            if (end == std::string::npos) break;
+
+            HomesteadDecorationDefinition definition;
+            definition.id = JsonInt(json, "id", begin, end);
+            definition.name = JsonString(json, "name", begin, end);
+            definition.maxCount = JsonInt(json, "max_count", begin, end);
+            if (definition.id > 0)
+            {
+                definitions.push_back(std::move(definition));
+            }
+            position = end + 1;
+        }
+    }
+
+    if (definitions.empty())
+    {
+        error = "The Guild Wars 2 API returned no Homestead decoration definitions.";
+        return false;
+    }
     return true;
 }

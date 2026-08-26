@@ -17,6 +17,13 @@ namespace Gw2Api
         std::string tag;
     };
 
+    struct HomesteadDecorationDefinition
+    {
+        int id = -1;
+        std::string name;
+        int maxCount = -1;
+    };
+
     bool LoadGuilds(
         const std::string& apiKey,
         std::vector<Guild>& guilds,
@@ -29,6 +36,11 @@ namespace Gw2Api
         const std::string& guildId,
         const std::vector<int>& ids,
         std::map<int, int>& counts,
+        std::string& error
+    );
+
+    bool LoadHomesteadDecorationDefinitions(
+        std::vector<HomesteadDecorationDefinition>& definitions,
         std::string& error
     );
 }

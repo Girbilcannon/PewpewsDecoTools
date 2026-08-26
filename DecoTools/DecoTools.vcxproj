@@ -154,6 +154,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <Image Include="src\Resources\tray.png" />
+    <Image Include="src\Resources\nav_move.png" />
+    <Image Include="src\Resources\nav_patterns.png" />
+    <Image Include="src\Resources\nav_map_swap.png" />
+    <Image Include="src\Resources\nav_group_tools.png" />
+    <Image Include="src\Resources\nav_group_mover.png" />
+    <Image Include="src\Resources\nav_documentation.png" />
+    <Image Include="src\Resources\nav_settings.png" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\DecoTools.rc" />
@@ -171,10 +178,12 @@
     <ClCompile Include="src\imgui\imgui_widgets.cpp" />
     <ClCompile Include="src\UI\MainWindow.cpp" />
     <ClCompile Include="src\UI\DecorationCounterWindow.cpp" />
+    <ClCompile Include="src\UI\Tabs\DocumentationTab.cpp" />
     <ClCompile Include="src\UI\Tabs\MapSwapTab.cpp" />
     <ClCompile Include="src\UI\Tabs\MergeExtractTab.cpp" />
     <ClCompile Include="src\UI\Tabs\GroupMoverTab.cpp" />
     <ClCompile Include="src\UI\Tabs\MoveToolTab.cpp" />
+    <ClCompile Include="src\UI\Tabs\PatternsTab.cpp" />
     <ClCompile Include="src\UI\Tabs\SettingsTab.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -197,10 +206,12 @@
     <ClInclude Include="src\UI\MainWindow.h" />
     <ClInclude Include="src\UI\DecorationCounterWindow.h" />
     <ClInclude Include="src\UI\XmlComboHelpers.h" />
+    <ClInclude Include="src\UI\Tabs\DocumentationTab.h" />
     <ClInclude Include="src\UI\Tabs\MapSwapTab.h" />
     <ClInclude Include="src\UI\Tabs\MergeExtractTab.h" />
     <ClInclude Include="src\UI\Tabs\GroupMoverTab.h" />
     <ClInclude Include="src\UI\Tabs\MoveToolTab.h" />
+    <ClInclude Include="src\UI\Tabs\PatternsTab.h" />
     <ClInclude Include="src\UI\Tabs\SettingsTab.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

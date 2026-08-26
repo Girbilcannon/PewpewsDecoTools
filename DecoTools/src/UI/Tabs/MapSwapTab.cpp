@@ -1133,21 +1133,7 @@ void MapSwapTab::Render()
 
     ImGui::Dummy(ImVec2(0.0f, 10.0f));
     RenderSectionHeading("Import");
-    ImGui::TextWrapped(
-        "Choose a decoration XML, then select the map it should be converted for."
-    );
-
-    ImGui::Dummy(ImVec2(0.0f, 6.0f));
-    ImGui::TextWrapped(
-        "If a Guild Hall is the Destination, choosing a guild from the list will give you an accurate decoration count for that guild, as well as allow the option to exclude anything missing decorations."
-    );
-
-    ImGui::Dummy(ImVec2(0.0f, 10.0f));
-    ImGui::TextWrapped(
-        "NOTE: To build for a specific guild, you must be the guild owner and provide a valid API key in Settings."
-    );
-
-    ImGui::Dummy(ImVec2(0.0f, 14.0f));
+    ImGui::Dummy(ImVec2(0.0f, 8.0f));
     if (ImGui::RadioButton("Homestead##SwapFolder", selectedFolderType == 0))
     {
         selectedFolderType = 0;

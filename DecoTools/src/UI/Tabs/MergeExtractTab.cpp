@@ -1154,29 +1154,6 @@ void MergeExtractTab::Render()
         RefreshXmlList();
     }
 
-    ImGui::TextWrapped(
-        "Choose the operation you need to perform:"
-    );
-
-    ImGui::Dummy(ImVec2(0.0f, 10.0f));
-    ImGui::TextWrapped(
-        "MERGE: Combine multiple XML files into one as groups."
-    );
-
-    ImGui::TextWrapped(
-        "GROUP: Import a single XML to create groups manually."
-    );
-
-    ImGui::TextWrapped(
-        "EXTRACT: Separate groups into individual files (includes an XML that excludes extracted decos)."
-    );
-
-    ImGui::Dummy(ImVec2(0.0f, 10.0f));
-    ImGui::TextWrapped(
-        "NOTE: If you choose to save the XML in-game, the groups will be deleted by in-game formatting. To retain groups, build the decorations you want to add, and merge them to your main, grouped XML."
-    );
-    
-    ImGui::Dummy(ImVec2(0.0f, 10.0f));
     RenderSectionHeading("Operation");
     if (ImGui::RadioButton("Merge XML Files", operation == 0))
     {
@@ -1277,23 +1254,6 @@ void MergeExtractTab::Render()
         if (!groupDocument.props.empty())
         {
             ImGui::Spacing();
-            ImGui::TextWrapped(
-                "- Left-click points to select "
-            );
-
-            ImGui::TextWrapped(
-                "- Right-click points to deselect"
-            );
-
-            ImGui::TextWrapped(
-                "- Enable Marquee to select multiple points in a selected region"
-            );
-
-            ImGui::TextWrapped(
-                "- Adjust Visible Distance slider to reduce visible decoration points that are further away"
-            );
-
-            ImGui::Dummy(ImVec2(0.0f, 12.0f));
             ImGui::Checkbox("Marquee Select", &marqueeMode);
             ImGui::SameLine();
             ImGui::Checkbox("Hide Grouped Decorations", &hideGrouped);

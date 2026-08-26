@@ -36,6 +36,13 @@
     <Image Include="src\Resources\tray.png">
       <Filter>Resource Files</Filter>
     </Image>
+    <Image Include="src\Resources\nav_move.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_patterns.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_map_swap.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_group_tools.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_group_mover.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_documentation.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_settings.png"><Filter>Resource Files</Filter></Image>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\DecoTools.rc">
@@ -86,6 +93,12 @@
       <Filter>Source Files\UI\Tabs</Filter>
     </ClCompile>
     <ClCompile Include="src\UI\Tabs\MoveToolTab.cpp">
+      <Filter>Source Files\UI\Tabs</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\Tabs\PatternsTab.cpp">
+      <Filter>Source Files\UI\Tabs</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\Tabs\DocumentationTab.cpp">
       <Filter>Source Files\UI\Tabs</Filter>
     </ClCompile>
     <ClCompile Include="src\UI\Tabs\SettingsTab.cpp">
@@ -160,6 +173,12 @@
       <Filter>Header Files\UI\Tabs</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\Tabs\MoveToolTab.h">
+      <Filter>Header Files\UI\Tabs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\Tabs\PatternsTab.h">
+      <Filter>Header Files\UI\Tabs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\Tabs\DocumentationTab.h">
       <Filter>Header Files\UI\Tabs</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\Tabs\SettingsTab.h">

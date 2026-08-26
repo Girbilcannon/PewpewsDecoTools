@@ -32,6 +32,11 @@ namespace DecorationCounterWindow
         const std::map<int, int>& available
     );
 
+    void UpdateRequirements(
+        const std::string& context,
+        const std::vector<Requirement>& requirements
+    );
+
     void Clear();
     void Render();
     void Shutdown();

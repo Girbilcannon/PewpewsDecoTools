@@ -76,6 +76,20 @@ namespace
         bool selected = false;
     };
 
+    struct PropTransformState
+    {
+        size_t propIndex = 0;
+        DVec3 position;
+        DVec3 rotation;
+    };
+
+    struct TransformHistoryEntry
+    {
+        std::string label;
+        std::vector<PropTransformState> before;
+        std::vector<PropTransformState> after;
+    };
+
     struct MapInfo
     {
         unsigned liveMapId;
@@ -142,6 +156,12 @@ namespace
     std::vector<DVec3> rotationDragStartPositions;
     std::vector<Mat3> rotationDragStartOrientations;
     std::vector<size_t> rotationDragPropIndices;
+    constexpr size_t MaxTransformHistory = 100;
+    std::vector<TransformHistoryEntry> undoHistory;
+    std::vector<TransformHistoryEntry> redoHistory;
+    std::vector<PropTransformState> pendingHistoryBefore;
+    std::string pendingHistoryLabel;
+    bool historyActionActive = false;
 
     Vec3 Add(Vec3 a, Vec3 b)
     {
@@ -686,8 +706,104 @@ namespace
         return count;
     }
 
+    std::vector<PropTransformState> CaptureSelectedTransformState()
+    {
+        std::vector<PropTransformState> snapshot;
+        snapshot.reserve(SelectedPropCount());
+        for (size_t index = 0; index < props.size(); ++index)
+        {
+            const PropPosition& prop = props[index];
+            if (!IsPropSelected(prop)) continue;
+            snapshot.push_back({ index, prop.position, prop.rotation });
+        }
+        return snapshot;
+    }
+
+    std::vector<PropTransformState> CaptureMatchingTransformState(
+        const std::vector<PropTransformState>& reference
+    )
+    {
+        std::vector<PropTransformState> snapshot;
+        snapshot.reserve(reference.size());
+        for (const PropTransformState& state : reference)
+        {
+            if (state.propIndex >= props.size()) continue;
+            const PropPosition& prop = props[state.propIndex];
+            snapshot.push_back({ state.propIndex, prop.position, prop.rotation });
+        }
+        return snapshot;
+    }
+
+    bool TransformStatesMatch(
+        const std::vector<PropTransformState>& left,
+        const std::vector<PropTransformState>& right
+    )
+    {
+        if (left.size() != right.size()) return false;
+        constexpr double Epsilon = 0.000000001;
+        for (size_t index = 0; index < left.size(); ++index)
+        {
+            const PropTransformState& a = left[index];
+            const PropTransformState& b = right[index];
+            if (a.propIndex != b.propIndex ||
+                std::fabs(a.position.x - b.position.x) > Epsilon ||
+                std::fabs(a.position.y - b.position.y) > Epsilon ||
+                std::fabs(a.position.z - b.position.z) > Epsilon ||
+                std::fabs(a.rotation.x - b.rotation.x) > Epsilon ||
+                std::fabs(a.rotation.y - b.rotation.y) > Epsilon ||
+                std::fabs(a.rotation.z - b.rotation.z) > Epsilon)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void CancelPendingHistoryAction()
+    {
+        historyActionActive = false;
+        pendingHistoryBefore.clear();
+        pendingHistoryLabel.clear();
+    }
+
+    void BeginHistoryAction(const char* label)
+    {
+        CancelPendingHistoryAction();
+        pendingHistoryBefore = CaptureSelectedTransformState();
+        if (pendingHistoryBefore.empty()) return;
+        pendingHistoryLabel = label;
+        historyActionActive = true;
+    }
+
+    void CommitHistoryAction()
+    {
+        if (!historyActionActive) return;
+        std::vector<PropTransformState> after =
+            CaptureMatchingTransformState(pendingHistoryBefore);
+        if (!TransformStatesMatch(pendingHistoryBefore, after))
+        {
+            undoHistory.push_back(
+                { pendingHistoryLabel, std::move(pendingHistoryBefore), std::move(after) }
+            );
+            if (undoHistory.size() > MaxTransformHistory)
+            {
+                undoHistory.erase(undoHistory.begin());
+            }
+            redoHistory.clear();
+        }
+        CancelPendingHistoryAction();
+    }
+
+    void ClearTransformHistory()
+    {
+        undoHistory.clear();
+        redoHistory.clear();
+        CancelPendingHistoryAction();
+    }
+
     void ResetManipulatorFrame()
     {
+        CancelPendingHistoryAction();
         hoveredAxis = 0;
         activeAxis = 0;
         inputCaptured = false;
@@ -730,8 +846,47 @@ namespace
         anchorPosition[2] = static_cast<float>(bottomZ);
     }
 
+    void ApplyTransformState(const std::vector<PropTransformState>& snapshot)
+    {
+        for (const PropTransformState& state : snapshot)
+        {
+            if (state.propIndex >= props.size()) continue;
+            PropPosition& prop = props[state.propIndex];
+            prop.position = state.position;
+            prop.rotation = state.rotation;
+            prop.modified = true;
+        }
+        ResetManipulatorFrame();
+        ComputeAnchor();
+    }
+
+    void UndoTransform()
+    {
+        CommitHistoryAction();
+        if (undoHistory.empty()) return;
+        TransformHistoryEntry entry = std::move(undoHistory.back());
+        undoHistory.pop_back();
+        ApplyTransformState(entry.before);
+        status = "Undid " + entry.label +
+            ". Apply to XML to save the restored state.";
+        redoHistory.push_back(std::move(entry));
+    }
+
+    void RedoTransform()
+    {
+        CommitHistoryAction();
+        if (redoHistory.empty()) return;
+        TransformHistoryEntry entry = std::move(redoHistory.back());
+        redoHistory.pop_back();
+        ApplyTransformState(entry.after);
+        status = "Redid " + entry.label +
+            ". Apply to XML to save the restored state.";
+        undoHistory.push_back(std::move(entry));
+    }
+
     void SelectionChanged()
     {
+        CommitHistoryAction();
         ResetManipulatorFrame();
         ComputeAnchor();
     }
@@ -1073,7 +1228,7 @@ namespace
         RefreshXmlList();
     }
 
-    bool ImportXml(const std::string& path)
+    bool ImportXml(const std::string& path, bool preserveTransformHistory = false)
     {
         std::ifstream file(Utf8Paths::FromUtf8(path), std::ios::binary);
         if (!file.is_open())
@@ -1261,6 +1416,10 @@ namespace
         importedFileName = Utf8Paths::ToUtf8(
             Utf8Paths::FromUtf8(path).filename()
         );
+        if (!preserveTransformHistory)
+        {
+            ClearTransformHistory();
+        }
         ResetManipulatorFrame();
         ComputeAnchor();
 
@@ -1298,6 +1457,7 @@ namespace
 
     void MoveToCharacter()
     {
+        CommitHistoryAction();
         Mumble::Data* mumble = AppRuntime::GetMumble();
         if (mumble == nullptr || mumble->Context.MapID == 0)
         {
@@ -1312,7 +1472,9 @@ namespace
             static_cast<float>(target.y),
             static_cast<float>(target.z)
         };
+        BeginHistoryAction("Move to Character");
         MoveAnchorTo(targetArray);
+        CommitHistoryAction();
         status =
             "Moved the decoration group to the character on map " +
             std::to_string(mumble->Context.MapID) + ".";
@@ -1320,6 +1482,7 @@ namespace
 
     void ApplyToXml()
     {
+        CommitHistoryAction();
         if (importedPath.empty())
         {
             status = "Import a grouped XML file first.";
@@ -1379,7 +1542,7 @@ namespace
             return;
         }
 
-        if (!ImportXml(importedPath))
+        if (!ImportXml(importedPath, true))
         {
             status = "The XML was updated, but could not be reloaded.";
             return;
@@ -1888,6 +2051,7 @@ namespace
 
             if (clicked && activeAxis == 0 && hoveredAxis != 0)
             {
+                BeginHistoryAction("group move");
                 activeAxis = hoveredAxis;
                 inputCaptured = true;
                 dragStartMouse = mouse;
@@ -1984,6 +2148,7 @@ namespace
 
             if (clicked && activeAxis == 0 && hoveredAxis != 0)
             {
+                BeginHistoryAction("group rotation");
                 activeAxis = hoveredAxis;
                 inputCaptured = true;
                 dragStartMouse = mouse;
@@ -2038,6 +2203,7 @@ namespace
 
         if (activeAxis != 0 && !mouseDown && inputCaptured)
         {
+            CommitHistoryAction();
             activeAxis = 0;
             inputCaptured = false;
             rotationDragStartPositions.clear();
@@ -2051,10 +2217,7 @@ void GroupMoverTab::Render()
     {
         InitializeXmlList();
         RenderSectionHeading("Import Scene");
-        ImGui::TextWrapped(
-            "Import a grouped scene, select one or more existing groups, then move or rotate them directly inside the same XML."
-        );
-        ImGui::Dummy(ImVec2(0.0f, 10.0f));
+        ImGui::Dummy(ImVec2(0.0f, 8.0f));
         if (ImGui::RadioButton("Homestead##GroupMover", &selectedFolderType, 0))
         {
             RefreshXmlList();
@@ -2159,10 +2322,20 @@ void GroupMoverTab::Render()
             {
                 anchorPosition[0], anchorPosition[1], anchorPosition[2]
             };
-            if (ImGui::InputFloat3("##GroupMoverAnchor", editedAnchor, "%.3f"))
+            const bool anchorEdited =
+                ImGui::InputFloat3("##GroupMoverAnchor", editedAnchor, "%.3f");
+            if (ImGui::IsItemActivated())
+            {
+                BeginHistoryAction("numeric group move");
+            }
+            if (anchorEdited)
             {
                 MoveAnchorTo(editedAnchor);
                 status = "Updated the selected group position.";
+            }
+            if (ImGui::IsItemDeactivatedAfterEdit())
+            {
+                CommitHistoryAction();
             }
         }
         else
@@ -2195,10 +2368,20 @@ void GroupMoverTab::Render()
                 groupRotationDegrees[1],
                 groupRotationDegrees[2]
             };
-            if (ImGui::InputFloat3("##GroupMoverRotation", editedRotation, "%.3f"))
+            const bool rotationEdited =
+                ImGui::InputFloat3("##GroupMoverRotation", editedRotation, "%.3f");
+            if (ImGui::IsItemActivated())
+            {
+                BeginHistoryAction("numeric group rotation");
+            }
+            if (rotationEdited)
             {
                 ApplyNumericGroupRotation(editedRotation);
                 status = "Updated the selected group rotation in X, Y, Z order.";
+            }
+            if (ImGui::IsItemDeactivatedAfterEdit())
+            {
+                CommitHistoryAction();
             }
         }
         else
@@ -2211,13 +2394,61 @@ void GroupMoverTab::Render()
         }
 
         ImGui::Dummy(ImVec2(0.0f, 16.0f));
-        if (!props.empty())
+        const float historyButtonWidth =
+            (ImGui::GetContentRegionAvail().x -
+                ImGui::GetStyle().ItemSpacing.x * 2.0f) / 3.0f;
+        if (!undoHistory.empty())
         {
-            if (ImGui::Button("Apply to XML", ImVec2(-1.0f, 0.0f))) ApplyToXml();
+            if (ImGui::Button(
+                "Undo##GroupMover",
+                ImVec2(historyButtonWidth, 0.0f)
+            ))
+            {
+                UndoTransform();
+            }
         }
         else
         {
-            RenderDisabledButton("Apply to XML", ImVec2(-1.0f, 0.0f));
+            RenderDisabledButton(
+                "Undo##GroupMover",
+                ImVec2(historyButtonWidth, 0.0f)
+            );
+        }
+        ImGui::SameLine();
+        if (!redoHistory.empty())
+        {
+            if (ImGui::Button(
+                "Redo##GroupMover",
+                ImVec2(historyButtonWidth, 0.0f)
+            ))
+            {
+                RedoTransform();
+            }
+        }
+        else
+        {
+            RenderDisabledButton(
+                "Redo##GroupMover",
+                ImVec2(historyButtonWidth, 0.0f)
+            );
+        }
+        ImGui::SameLine();
+        if (!props.empty())
+        {
+            if (ImGui::Button(
+                "Apply to XML",
+                ImVec2(historyButtonWidth, 0.0f)
+            ))
+            {
+                ApplyToXml();
+            }
+        }
+        else
+        {
+            RenderDisabledButton(
+                "Apply to XML",
+                ImVec2(historyButtonWidth, 0.0f)
+            );
         }
         ImGui::Spacing();
         ImGui::TextDisabled("%s", status.c_str());
@@ -2300,6 +2531,7 @@ void GroupMoverTab::ClearImportedData()
     rotationDragStartPositions.clear();
     rotationDragStartOrientations.clear();
     rotationDragPropIndices.clear();
+    ClearTransformHistory();
 }
 
 UINT GroupMoverTab::WndProc(HWND, UINT message, WPARAM, LPARAM lParam)
@@ -2359,6 +2591,7 @@ UINT GroupMoverTab::WndProc(HWND, UINT message, WPARAM, LPARAM lParam)
         mouseDown = false;
         if (inputCaptured || activeAxis != 0)
         {
+            CommitHistoryAction();
             inputCaptured = false;
             activeAxis = 0;
             rotationDragStartPositions.clear();

@@ -3,11 +3,15 @@
 // and resolves decoration names and IDs for XML tools and API count operations.
 
 #include "DecorationDatabase.h"
+#include "Gw2Api.h"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <set>
 #include <sstream>
@@ -1179,6 +1183,14 @@ namespace
 
     std::vector<DecorationDatabase::Entry> activeEntries;
     std::string databasePath;
+    struct CatalogResult
+    {
+        bool success = false;
+        std::string error;
+        std::vector<Gw2Api::HomesteadDecorationDefinition> definitions;
+    };
+    std::future<CatalogResult> catalogJob;
+    bool catalogUpdateRunning = false;
 
     std::string FoldAscii(std::string value)
     {
@@ -1420,6 +1432,8 @@ namespace
                 ReadJsonId(json, "HomesteadId", objectBegin, objectEnd);
             entry.guildUpgradeId =
                 ReadJsonId(json, "GuildUpgradeId", objectBegin, objectEnd);
+            entry.maxCount =
+                ReadJsonId(json, "MaxCount", objectBegin, objectEnd);
 
             if (!entry.name.empty() &&
                 (entry.homesteadId > 0 || entry.guildUpgradeId > 0))
@@ -1456,10 +1470,15 @@ namespace
             if (entry.homesteadId > 0) homesteadIds.insert(entry.homesteadId);
         }
 
+        const std::time_t now = std::time(nullptr);
+        std::tm utc = {};
+        gmtime_s(&utc, &now);
+
         file << "{\n";
-        file << "  \"Version\": 1,\n";
-        file << "  \"GeneratedAtUtc\": \"2026-07-30T00:00:00Z\",\n";
-        file << "  \"GeneratedBy\": \"Pewpew's Deco Tools 1.2.1.4 built-in seed\",\n";
+        file << "  \"Version\": 2,\n";
+        file << "  \"GeneratedAtUtc\": \""
+            << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ") << "\",\n";
+        file << "  \"GeneratedBy\": \"Pewpew's Deco Tools 1.3.0.5\",\n";
         file << "  \"SourceSnapshot\": {\n";
         file << "    \"GuildUpgradeIds\": [";
         size_t written = 0;
@@ -1491,6 +1510,10 @@ namespace
             file << "      \"GuildUpgradeId\": ";
             if (entry.guildUpgradeId > 0) file << entry.guildUpgradeId;
             else file << "null";
+            file << ",\n";
+            file << "      \"MaxCount\": ";
+            if (entry.maxCount >= 0) file << entry.maxCount;
+            else file << "null";
             file << "\n";
             file << "    }" << (index + 1 < entries.size() ? "," : "") << "\n";
         }
@@ -1511,6 +1534,69 @@ namespace
         std::filesystem::rename(temporaryPath, finalPath, error);
         return !error;
     }
+
+    bool NeedsCatalogUpdate()
+    {
+        return std::any_of(
+            activeEntries.begin(),
+            activeEntries.end(),
+            [](const DecorationDatabase::Entry& entry)
+            {
+                return entry.homesteadId > 0 && entry.maxCount < 0;
+            }
+        );
+    }
+
+    void StartCatalogUpdate()
+    {
+        if (catalogUpdateRunning || !NeedsCatalogUpdate()) return;
+        catalogUpdateRunning = true;
+        catalogJob = std::async(std::launch::async, []()
+        {
+            CatalogResult result;
+            result.success = Gw2Api::LoadHomesteadDecorationDefinitions(
+                result.definitions,
+                result.error
+            );
+            return result;
+        });
+    }
+
+    void ApplyCatalogResult(CatalogResult&& result)
+    {
+        if (!result.success) return;
+        for (const Gw2Api::HomesteadDecorationDefinition& definition : result.definitions)
+        {
+            auto found = std::find_if(
+                activeEntries.begin(),
+                activeEntries.end(),
+                [&definition](const DecorationDatabase::Entry& entry)
+                {
+                    return entry.homesteadId == definition.id;
+                }
+            );
+            if (found == activeEntries.end())
+            {
+                activeEntries.push_back(
+                    { definition.name, definition.id, -1, definition.maxCount }
+                );
+            }
+            else
+            {
+                if (!definition.name.empty()) found->name = definition.name;
+                found->maxCount = definition.maxCount;
+            }
+        }
+        std::sort(
+            activeEntries.begin(),
+            activeEntries.end(),
+            [](const DecorationDatabase::Entry& left, const DecorationDatabase::Entry& right)
+            {
+                return left.name < right.name;
+            }
+        );
+        SaveDatabase(databasePath, activeEntries);
+    }
 }
 
 void DecorationDatabase::Initialize(const std::string& addonDirectory)
@@ -1524,15 +1610,39 @@ void DecorationDatabase::Initialize(const std::string& addonDirectory)
     if (LoadDatabase(databasePath, loaded))
     {
         activeEntries = std::move(loaded);
+        StartCatalogUpdate();
         return;
     }
 
     activeEntries.assign(std::begin(Entries), std::end(Entries));
     SaveDatabase(databasePath, activeEntries);
+    StartCatalogUpdate();
+}
+
+void DecorationDatabase::Update()
+{
+    if (!catalogUpdateRunning || !catalogJob.valid() ||
+        catalogJob.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+    {
+        return;
+    }
+    CatalogResult result;
+    try { result = catalogJob.get(); }
+    catch (...) {}
+    catalogUpdateRunning = false;
+    ApplyCatalogResult(std::move(result));
 }
 
 void DecorationDatabase::Shutdown()
 {
+    if (catalogJob.valid())
+    {
+        CatalogResult result;
+        try { result = catalogJob.get(); }
+        catch (...) {}
+        catalogUpdateRunning = false;
+        ApplyCatalogResult(std::move(result));
+    }
     activeEntries.clear();
     databasePath.clear();
 }
@@ -1560,6 +1670,19 @@ const char* DecorationDatabase::FindNameById(int id, int type)
         }
     }
     return nullptr;
+}
+
+int DecorationDatabase::FindMaxCountById(int id, int type)
+{
+    if (type != 0) return -1;
+    for (const Entry& entry : activeEntries)
+    {
+        if (entry.homesteadId == id)
+        {
+            return entry.maxCount;
+        }
+    }
+    return -1;
 }
 
 int DecorationDatabase::Count()

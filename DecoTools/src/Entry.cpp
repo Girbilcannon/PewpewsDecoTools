@@ -19,6 +19,7 @@
 #include "UI/Tabs/GroupMoverTab.h"
 #include "UI/Tabs/MergeExtractTab.h"
 #include "UI/Tabs/MoveToolTab.h"
+#include "UI/Tabs/PatternsTab.h"
 
 namespace
 {
@@ -26,6 +27,23 @@ namespace
     constexpr const char* QuickAccessIdentifier = "DECOTOOLS_QUICKACCESS";
     constexpr const char* QuickAccessTextureIdentifier = "DECOTOOLS_QUICKACCESS_ICON";
     constexpr const char* ToggleWindowsInputBind = "KB_DECOTOOLS_TOGGLE_WINDOWS";
+
+    struct NavigationTexture
+    {
+        const char* identifier;
+        unsigned resourceId;
+    };
+
+    constexpr NavigationTexture NavigationTextures[] =
+    {
+        { "DECOTOOLS_NAV_MOVE", IDR_DECOTOOLS_NAV_MOVE },
+        { "DECOTOOLS_NAV_PATTERNS", IDR_DECOTOOLS_NAV_PATTERNS },
+        { "DECOTOOLS_NAV_MAP_SWAP", IDR_DECOTOOLS_NAV_MAP_SWAP },
+        { "DECOTOOLS_NAV_GROUP_TOOLS", IDR_DECOTOOLS_NAV_GROUP_TOOLS },
+        { "DECOTOOLS_NAV_GROUP_MOVER", IDR_DECOTOOLS_NAV_GROUP_MOVER },
+        { "DECOTOOLS_NAV_DOCUMENTATION", IDR_DECOTOOLS_NAV_DOCUMENTATION },
+        { "DECOTOOLS_NAV_SETTINGS", IDR_DECOTOOLS_NAV_SETTINGS }
+    };
 
     AddonDefinition_t addonDefinition = {};
     AddonAPI_t* nexusApi = nullptr;
@@ -59,13 +77,13 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef()
     addonDefinition.Name = AddonName;
 
     addonDefinition.Version.Major = 1;
-    addonDefinition.Version.Minor = 2;
-    addonDefinition.Version.Build = 1;
-    addonDefinition.Version.Revision = 4;
+    addonDefinition.Version.Minor = 3;
+    addonDefinition.Version.Build = 0;
+    addonDefinition.Version.Revision = 5;
 
     addonDefinition.Author = "Girbilcannon.8259";
     addonDefinition.Description =
-        "Move, Group, Merge, Extract, and Map Swap large decoration builds for Homesteads and Guild Halls.";
+        "Move, pattern, group, merge, extract, and map swap large decoration builds for Homesteads and Guild Halls.";
 
     addonDefinition.Load = AddonLoad;
     addonDefinition.Unload = AddonUnload;
@@ -105,6 +123,14 @@ namespace
             IDR_DECOTOOLS_QUICKACCESS_ICON,
             addonModule
         );
+        for (const NavigationTexture& texture : NavigationTextures)
+        {
+            nexusApi->Textures_GetOrCreateFromResource(
+                texture.identifier,
+                texture.resourceId,
+                addonModule
+            );
+        }
         nexusApi->InputBinds_RegisterWithString(
             ToggleWindowsInputBind,
             OnToggleWindows,
@@ -129,7 +155,7 @@ namespace
         nexusApi->Log(
             LOGL_INFO,
             AddonName,
-            "Pewpew's Deco Tools 1.2.1.4 loaded."
+            "Pewpew's Deco Tools 1.3.0.5 loaded."
         );
     }
 
@@ -148,6 +174,7 @@ namespace
         );
 
         MapSwapTab::Shutdown();
+        PatternsTab::ClearImportedData();
         DecorationCounterWindow::Shutdown();
         AppSettings::Shutdown();
         DecorationDatabase::Shutdown();
@@ -174,8 +201,10 @@ namespace
         }
 
         AppSettings::Update();
+        DecorationDatabase::Update();
         MainWindow::Render();
         MoveToolTab::RenderOverlay();
+        PatternsTab::RenderOverlay();
         GroupMoverTab::RenderOverlay();
         MergeExtractTab::RenderOverlay();
     }
@@ -205,6 +234,10 @@ namespace
 
     UINT AddonWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
     {
+        if (PatternsTab::WndProc(window, message, wParam, lParam) == 0)
+        {
+            return 0;
+        }
         if (GroupMoverTab::WndProc(window, message, wParam, lParam) == 0)
         {
             return 0;
