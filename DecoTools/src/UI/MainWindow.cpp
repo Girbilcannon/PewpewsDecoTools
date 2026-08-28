@@ -10,7 +10,6 @@
 #include "DecorationCounterWindow.h"
 #include "Tabs/DocumentationTab.h"
 #include "Tabs/MapSwapTab.h"
-#include "Tabs/GroupMoverTab.h"
 #include "Tabs/MergeExtractTab.h"
 #include "Tabs/MoveToolTab.h"
 #include "Tabs/PatternsTab.h"
@@ -24,7 +23,6 @@ namespace
         MoveTool,
         Patterns,
         MapSwap,
-        GroupMover,
         MergeExtract,
         Documentation,
         Settings
@@ -50,10 +48,6 @@ namespace
         else if (activeTab == ActiveTab::MapSwap)
         {
             MapSwapTab::ClearImportedData();
-        }
-        else if (activeTab == ActiveTab::GroupMover)
-        {
-            GroupMoverTab::ClearImportedData();
         }
         else if (activeTab == ActiveTab::MergeExtract)
         {
@@ -130,11 +124,10 @@ void MainWindow::Render()
     {
         constexpr NavigationItem tools[] =
         {
+            { ActiveTab::MergeExtract, "Group Tools", "GroupTools", "DECOTOOLS_NAV_GROUP_TOOLS" },
             { ActiveTab::MoveTool, "Move Tool", "Move", "DECOTOOLS_NAV_MOVE" },
             { ActiveTab::Patterns, "Patterns", "Patterns", "DECOTOOLS_NAV_PATTERNS" },
-            { ActiveTab::MapSwap, "Map Swap", "MapSwap", "DECOTOOLS_NAV_MAP_SWAP" },
-            { ActiveTab::MergeExtract, "Group Tools", "GroupTools", "DECOTOOLS_NAV_GROUP_TOOLS" },
-            { ActiveTab::GroupMover, "Group Mover", "GroupMover", "DECOTOOLS_NAV_GROUP_MOVER" }
+            { ActiveTab::MapSwap, "Map Swap", "MapSwap", "DECOTOOLS_NAV_MAP_SWAP" }
         };
         const NavigationItem settingsItem =
             { ActiveTab::Settings, "Settings", "Settings", "DECOTOOLS_NAV_SETTINGS" };
@@ -161,7 +154,6 @@ void MainWindow::Render()
         else if (activeTab == ActiveTab::Patterns) PatternsTab::Render();
         else if (activeTab == ActiveTab::MapSwap) MapSwapTab::Render();
         else if (activeTab == ActiveTab::MergeExtract) MergeExtractTab::Render();
-        else if (activeTab == ActiveTab::GroupMover) GroupMoverTab::Render();
         else if (activeTab == ActiveTab::Documentation) DocumentationTab::Render();
         else if (activeTab == ActiveTab::Settings) SettingsTab::Render();
         ImGui::EndChild();

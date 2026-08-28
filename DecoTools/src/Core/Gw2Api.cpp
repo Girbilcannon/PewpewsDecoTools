@@ -54,7 +54,7 @@ namespace
     {
         error.clear();
         HINTERNET session = WinHttpOpen(
-            L"PewpewsDecoTools/1.3.0.5",
+            L"PewpewsDecoTools/1.3.2.3",
             WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
             WINHTTP_NO_PROXY_NAME,
             WINHTTP_NO_PROXY_BYPASS,

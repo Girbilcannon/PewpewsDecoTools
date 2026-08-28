@@ -40,7 +40,6 @@
     <Image Include="src\Resources\nav_patterns.png"><Filter>Resource Files</Filter></Image>
     <Image Include="src\Resources\nav_map_swap.png"><Filter>Resource Files</Filter></Image>
     <Image Include="src\Resources\nav_group_tools.png"><Filter>Resource Files</Filter></Image>
-    <Image Include="src\Resources\nav_group_mover.png"><Filter>Resource Files</Filter></Image>
     <Image Include="src\Resources\nav_documentation.png"><Filter>Resource Files</Filter></Image>
     <Image Include="src\Resources\nav_settings.png"><Filter>Resource Files</Filter></Image>
   </ItemGroup>

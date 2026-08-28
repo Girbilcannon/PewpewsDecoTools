@@ -16,7 +16,6 @@
 #include "UI/MainWindow.h"
 #include "UI/DecorationCounterWindow.h"
 #include "UI/Tabs/MapSwapTab.h"
-#include "UI/Tabs/GroupMoverTab.h"
 #include "UI/Tabs/MergeExtractTab.h"
 #include "UI/Tabs/MoveToolTab.h"
 #include "UI/Tabs/PatternsTab.h"
@@ -40,7 +39,6 @@ namespace
         { "DECOTOOLS_NAV_PATTERNS", IDR_DECOTOOLS_NAV_PATTERNS },
         { "DECOTOOLS_NAV_MAP_SWAP", IDR_DECOTOOLS_NAV_MAP_SWAP },
         { "DECOTOOLS_NAV_GROUP_TOOLS", IDR_DECOTOOLS_NAV_GROUP_TOOLS },
-        { "DECOTOOLS_NAV_GROUP_MOVER", IDR_DECOTOOLS_NAV_GROUP_MOVER },
         { "DECOTOOLS_NAV_DOCUMENTATION", IDR_DECOTOOLS_NAV_DOCUMENTATION },
         { "DECOTOOLS_NAV_SETTINGS", IDR_DECOTOOLS_NAV_SETTINGS }
     };
@@ -78,8 +76,8 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef()
 
     addonDefinition.Version.Major = 1;
     addonDefinition.Version.Minor = 3;
-    addonDefinition.Version.Build = 0;
-    addonDefinition.Version.Revision = 5;
+    addonDefinition.Version.Build = 2;
+    addonDefinition.Version.Revision = 3;
 
     addonDefinition.Author = "Girbilcannon.8259";
     addonDefinition.Description =
@@ -155,7 +153,7 @@ namespace
         nexusApi->Log(
             LOGL_INFO,
             AddonName,
-            "Pewpew's Deco Tools 1.3.0.5 loaded."
+            "Pewpew's Deco Tools 1.3.2.3 loaded."
         );
     }
 
@@ -205,7 +203,6 @@ namespace
         MainWindow::Render();
         MoveToolTab::RenderOverlay();
         PatternsTab::RenderOverlay();
-        GroupMoverTab::RenderOverlay();
         MergeExtractTab::RenderOverlay();
     }
 
@@ -235,10 +232,6 @@ namespace
     UINT AddonWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
     {
         if (PatternsTab::WndProc(window, message, wParam, lParam) == 0)
-        {
-            return 0;
-        }
-        if (GroupMoverTab::WndProc(window, message, wParam, lParam) == 0)
         {
             return 0;
         }

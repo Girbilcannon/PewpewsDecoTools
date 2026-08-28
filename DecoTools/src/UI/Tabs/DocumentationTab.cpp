@@ -126,10 +126,19 @@ namespace
     {
         RenderPageTitle("Move Tool");
         RenderParagraph(
-            "The Move Tool is simple to use and designed with entire XML files in mind. It is especially useful for people who divide their Homesteads or Guild Halls into multiple pieces for organization or redistribution. Unlike in-game or other third-party tools, Pewpew's Deco Tools can move and rotate large groups of decorations, with this tool requiring only a single file import."
+            "Move Tool provides one location for repositioning either an entire XML layout or selected XML groups. Choose the source mode that matches what you need to move, then use the corresponding workflow below."
         );
 
-        RenderSectionHeading("How to Use");
+        RenderSectionHeading("Move Source");
+        RenderBullet("Full XML",
+            "Uses the complete imported layout as one construction. Export Updated XML creates a new indexed _MOVED#.xml file and leaves the imported file unchanged.");
+        RenderBullet("XML Groups",
+            "Provides the complete former Group Mover workflow inside Move Tool. It displays named groups, permits one or multiple group selections, and applies changes directly to the imported XML.");
+        RenderNote(
+            "XML Groups was consolidated into Move Tool because both workflows perform the same fundamental move and rotation operations. See the separate Group Mover documentation page for its complete selection, movement, rotation, Undo/Redo, and Apply instructions."
+        );
+
+        RenderSectionHeading("How to Use Full XML");
         RenderStep(1, "Choose your source type: Homestead or Guild Hall",
             "This determines which default game folder the tool uses for importing and exporting. Default folders can be verified or changed in Settings.");
         RenderStep(2, "Save what you are working on in-game",
@@ -168,11 +177,17 @@ namespace
         RenderStep(1, "Import",
             "Select and import the XML you are currently working on. For more information about importing, see the first three steps in the Move Tool documentation.");
 
-        RenderStep(2, "Choose a pattern type", "");
+        RenderStep(2, "Choose the pattern source", "");
+        RenderBullet("Full XML",
+            "Uses the complete imported layout as one pattern unit and retains the indexed _PATTERN#.xml export workflow.", 18.0f);
+        RenderBullet("XML Groups",
+            "Displays only decorations contained in named XML groups. Select exactly one group from the list or by clicking any of its scene points. Ungrouped decorations remain safely in the file but are hidden from this workspace.", 18.0f);
+
+        RenderStep(3, "Choose a pattern type", "");
         RenderBullet("Line",
-            "Creates a straight line by repeating the imported decorations. The line can grow from its end or from its center. From Center creates the selected number of copies on both sides of the original.", 18.0f);
+            "Creates a straight line by repeating the imported decorations across a fixed Total Offset XYZ. Changing Copies redistributes the instances evenly without moving the outer endpoint. From Center creates the selected number of copies on both sides of the original while preserving both outer endpoints.", 18.0f);
         RenderBullet("Circle",
-            "Creates a circular pattern with up to 12 total instances evenly spaced along the Sweep angle. A sweep of 360 degrees creates a complete circle.", 18.0f);
+            "Creates a circular pattern with 2 to 72 total instances. Sweep ranges continuously from 1 to 1080 degrees, with visual marks at 360, 720, and 1080 degrees for building as many as three revolutions. Pattern Count defaults to 6 and Sweep defaults to 360 degrees. Sweep and Total Vertical Offset define fixed first and last points, so changing Pattern Count only redistributes instances between them. A flat 360-degree circle remains a closed loop without an overlapping final copy.", 18.0f);
         RenderBullet("Square",
             "Creates a two-dimensional repeating grid with different vertical-offset styles for three-dimensional effects:", 18.0f);
         RenderBullet("Corner", "Builds a diagonal ramp from corner to corner.", 42.0f);
@@ -182,7 +197,7 @@ namespace
         RenderBullet("Cube",
             "Works similarly to Square while adding a third axis for the pattern to grow from.", 18.0f);
 
-        RenderStep(3, "Select your move operation", "");
+        RenderStep(4, "Select your move operation", "");
         RenderBullet("Move",
             "Provides a colored three-axis manipulator on the main object. Moving it repositions the entire pattern.", 18.0f);
         RenderBullet("Rotate",
@@ -190,14 +205,16 @@ namespace
         RenderBullet("Pattern Rotate",
             "Provides three-axis rotation rings at the center of the complete pattern and rotates the arrangement as one unit.", 18.0f);
 
-        RenderStep(4, "Control spacing, step, and offset",
-            "Each pattern type provides a second gray manipulator for changing spacing and vertical offset steps. The gray offset manipulator is not available during the Pattern Rotate operation.");
-        RenderStep(5, "Export",
-            "Like the Move Tool, Patterns exports a new XML using the suffix _PATTERN#.xml. The number is automatically indexed according to the files already available.");
+        RenderStep(5, "Control spacing and offsets",
+            "Each pattern type provides a second gray manipulator for changing spacing and offsets. Line uses a total XYZ offset to its outer endpoint, while Circle uses radius and the total vertical difference between its first and last instances. These adjustments preserve the colored source handle's current position, including after Pattern Rotate. The gray offset manipulator is not available during the Pattern Rotate operation.");
+        RenderStep(6, "Export or Apply",
+            "Full XML exports a new file using the automatically indexed _PATTERN#.xml suffix. XML Groups uses Apply to XML instead: the original instance remains in its existing group, and every generated replica becomes a separate adjacent group named Original Group (Copy 1), Original Group (Copy 2), and so on. Existing copy names are skipped automatically. Every other group and every ungrouped decoration remains untouched.");
+        RenderStep(7, "Undo and Redo",
+            "XML Groups retains as many as 100 pattern-setting, move, and rotation changes during the current selected-group session. Apply to XML does not clear the history, so an earlier result can be restored and applied again.");
 
         RenderSectionHeading("Common Practices");
         RenderParagraph(
-            "This tool is excellent for complex jumping-puzzle layouts. A useful workflow is to create the required piece, export it, and merge it into the build you are working on. The merge process, described under Group Tools, combines the files and automatically creates a group for the imported pattern. Group Mover can then position that pattern precisely within the complete build XML."
+            "Full XML remains useful for creating a separate reusable pattern that can be merged into another build. XML Groups is faster when the source pieces already exist inside a complete workspace: create a named group in Group Tools, pattern that group in place, apply it, and reload the same XML in-game."
         );
     }
 
@@ -278,7 +295,10 @@ namespace
     {
         RenderPageTitle("Group Mover");
         RenderParagraph(
-            "When a set of decorations needs to be repositioned but you do not want to extract it and use Move Tool separately, Group Mover simplifies the process. Groups created through Merge or Group operations in Group Tools can be moved without leaving the complete layout."
+            "The complete Group Mover workflow can now be found under Move Tool -> XML Groups. It was consolidated into Move Tool because moving a complete XML and moving selected groups use the same fundamental operations, while the source mode determines what is affected and how the result is saved. This documentation remains separate to help existing users transition without losing the familiar Group Mover instructions."
+        );
+        RenderNote(
+            "Open Move Tool and select XML Groups to use the functionality described on this page."
         );
 
         RenderSectionHeading("How to Use");
@@ -289,7 +309,7 @@ namespace
         RenderStep(3, "Use Move or Rotate",
             "Change the complete position or orientation of the selected group. Selecting multiple groups moves or rotates them together around an anchor averaged between those groups.");
         RenderStep(4, "Undo and Redo",
-            "Undo and Redo step backward or forward through as many as 100 move and rotation operations in the current Group Mover session. Applying changes does not clear this history, so you can undo earlier adjustments and apply the restored state again. Importing another XML or leaving Group Mover starts a new history.");
+            "Undo and Redo step backward or forward through as many as 100 move and rotation operations in the current XML Groups session. Applying changes does not clear this history, so you can undo earlier adjustments and apply the restored state again. Importing another XML, switching source modes, or leaving Move Tool starts a new history.");
         RenderStep(5, "Apply to the XML",
             "Like the Group operation in Group Tools, Group Mover does not create a separate exported XML. This reduces file clutter during small adjustments and makes checking changes faster. After moving and applying, reload the XML in-game to view the result.");
 

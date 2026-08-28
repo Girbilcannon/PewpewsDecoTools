@@ -2212,66 +2212,8 @@ namespace
     }
 }
 
-void GroupMoverTab::Render()
+void GroupMoverTab::RenderWorkspace()
 {
-    {
-        InitializeXmlList();
-        RenderSectionHeading("Import Scene");
-        ImGui::Dummy(ImVec2(0.0f, 8.0f));
-        if (ImGui::RadioButton("Homestead##GroupMover", &selectedFolderType, 0))
-        {
-            RefreshXmlList();
-        }
-        ImGui::SameLine();
-        if (ImGui::RadioButton("Guild Hall##GroupMover", &selectedFolderType, 1))
-        {
-            RefreshXmlList();
-        }
-
-        const bool hasFileSelection =
-            selectedXmlIndex >= 0 &&
-            selectedXmlIndex < static_cast<int>(availableXmlFiles.size());
-        const char* selectedName = hasFileSelection
-            ? availableXmlFiles[static_cast<size_t>(selectedXmlIndex)].name.c_str()
-            : "No XML files available";
-        ImGui::SetNextItemWidth(-1.0f);
-        XmlComboHelpers::SetPopupWidth(availableXmlFiles);
-        if (ImGui::BeginCombo("##GroupMoverXmlFileList", selectedName))
-        {
-            for (size_t index = 0; index < availableXmlFiles.size(); ++index)
-            {
-                const bool selected = selectedXmlIndex == static_cast<int>(index);
-                ImGui::PushID(static_cast<int>(index));
-                if (ImGui::Selectable(availableXmlFiles[index].name.c_str(), selected))
-                {
-                    selectedXmlIndex = static_cast<int>(index);
-                }
-                if (selected) ImGui::SetItemDefaultFocus();
-                ImGui::PopID();
-            }
-            ImGui::EndCombo();
-        }
-
-        const float actionWidth =
-            (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) *
-            0.5f;
-        if (ImGui::Button("Refresh List##GroupMover", ImVec2(actionWidth, 0.0f)))
-        {
-            RefreshXmlList();
-        }
-        ImGui::SameLine();
-        if (hasFileSelection)
-        {
-            if (ImGui::Button("Import Selected##GroupMover", ImVec2(actionWidth, 0.0f)))
-            {
-                ImportXml(availableXmlFiles[static_cast<size_t>(selectedXmlIndex)].path);
-            }
-        }
-        else
-        {
-            RenderDisabledButton("Import Selected##GroupMover", ImVec2(actionWidth, 0.0f));
-        }
-
         if (!groups.empty())
         {
             ImGui::Dummy(ImVec2(0.0f, 16.0f));
@@ -2452,7 +2394,16 @@ void GroupMoverTab::Render()
         }
         ImGui::Spacing();
         ImGui::TextDisabled("%s", status.c_str());
-    }
+}
+
+bool GroupMoverTab::ImportPath(const std::string& path)
+{
+    return ImportXml(path);
+}
+
+void GroupMoverTab::Render()
+{
+    RenderWorkspace();
 }
 void GroupMoverTab::RenderOverlay()
 {

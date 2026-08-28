@@ -24,6 +24,7 @@
 #include <iomanip>
 #include <limits>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -52,7 +53,19 @@ namespace
         DVec3 position;
         DVec3 rotation;
         int id = -1;
+        int groupIndex = -1;
         std::string name;
+    };
+
+    struct GroupInfo
+    {
+        std::string name;
+        std::vector<size_t> propIndices;
+        size_t commentStart = 0;
+        size_t commentEnd = 0;
+        size_t contentEnd = 0;
+        size_t insertStart = 0;
+        bool selected = false;
     };
 
     struct Instance
@@ -81,13 +94,17 @@ namespace
 
     using XmlFileEntry = XmlFileUtils::Entry;
 
+    enum class SourceMode { FullXml, XmlGroups };
     enum class PatternType { Line, Circle, Square, Cube };
     enum class SquareOrigin { Corner, Edge, Center };
 
     std::string xmlSource;
+    std::string importedPath;
     std::string importedFileName;
     std::string status = "No XML imported";
+    std::vector<SourceProp> allSourceProps;
     std::vector<SourceProp> sourceProps;
+    std::vector<GroupInfo> groups;
     std::vector<Instance> instances;
     std::vector<GeneratedProp> generatedProps;
     std::vector<XmlFileEntry> availableXmlFiles;
@@ -97,13 +114,15 @@ namespace
     int selectedXmlIndex = -1;
     bool fileListInitialized = false;
     bool listedSubFolders = false;
+    SourceMode sourceMode = SourceMode::FullXml;
+    int selectedGroupIndex = -1;
 
     PatternType patternType = PatternType::Line;
     SquareOrigin squareOrigin = SquareOrigin::Corner;
     int lineCopies = 3;
     bool lineFromCenter = false;
-    float lineStep[3] = { 100.0f, 0.0f, 0.0f };
-    int circleCount = 4;
+    float lineStep[3] = { 300.0f, 0.0f, 0.0f };
+    int circleCount = 6;
     int circleSweep = 360;
     float circleRadius = 300.0f;
     float circleVerticalStep = 0.0f;
@@ -149,6 +168,53 @@ namespace
     float dragStartCircleRadius = 0.0f;
     float dragStartCircleVertical = 0.0f;
     Mat3 dragStartRotation;
+
+    struct PatternState
+    {
+        PatternType patternType = PatternType::Line;
+        SquareOrigin squareOrigin = SquareOrigin::Corner;
+        int lineCopies = 0;
+        bool lineFromCenter = false;
+        float lineStep[3] = {};
+        int circleCount = 0;
+        int circleSweep = 0;
+        float circleRadius = 0.0f;
+        float circleVerticalStep = 0.0f;
+        bool circleKeepOrientation = false;
+        int squareX = 0;
+        int squareY = 0;
+        int squareCenterX = 0;
+        int squareCenterY = 0;
+        float squareSpacing[2] = {};
+        float squareVerticalOffset = 0.0f;
+        int cubeCount[3] = {};
+        float cubeSpacing[3] = {};
+        DVec3 translation;
+        Mat3 objectRotation;
+        Mat3 wholePatternRotation;
+        float objectRotationDegrees[3] = {};
+        float patternRotationDegrees[3] = {};
+    };
+
+    struct PatternHistoryEntry
+    {
+        std::string label;
+        PatternState before;
+        PatternState after;
+    };
+
+    constexpr size_t MaxPatternHistory = 100;
+    std::vector<PatternHistoryEntry> undoHistory;
+    std::vector<PatternHistoryEntry> redoHistory;
+    PatternState pendingHistoryBefore;
+    std::string pendingHistoryLabel;
+    bool historyActionActive = false;
+    bool uiHistoryActive = false;
+    int hoveredPointGroup = -1;
+    bool pointClickPending = false;
+    bool pointRightClickPending = false;
+    bool pointRightClickCaptured = false;
+    bool groupApplyWritten = false;
 
     Vec3 Add(Vec3 a, Vec3 b) { return { a.x+b.x, a.y+b.y, a.z+b.z }; }
     Vec3 Subtract(Vec3 a, Vec3 b) { return { a.x-b.x, a.y-b.y, a.z-b.z }; }
@@ -303,10 +369,38 @@ namespace
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha,ImGui::GetStyle().Alpha*0.5f);
         ImGui::Button(label,size); ImGui::PopStyleVar(); ImGui::PopItemFlag();
     }
+    void RenderSweepMarks()
+    {
+        const ImVec2 minimum=ImGui::GetItemRectMin();
+        const ImVec2 maximum=ImGui::GetItemRectMax();
+        ImDrawList* draw=ImGui::GetWindowDrawList();
+        const ImU32 tickColor=ImGui::GetColorU32(ImGuiCol_TextDisabled);
+        constexpr int marks[3]={360,720,1080};
+        for (int mark:marks)
+        {
+            const float amount=static_cast<float>(mark-1)/1079.0f;
+            const float x=minimum.x+(maximum.x-minimum.x)*amount;
+            draw->AddLine({x,maximum.y+2.0f},{x,maximum.y+7.0f},tickColor,1.0f);
+            const std::string label=std::to_string(mark);
+            const ImVec2 textSize=ImGui::CalcTextSize(label.c_str());
+            float textX=x-textSize.x*0.5f;
+            textX=(std::max)(minimum.x,(std::min)(textX,maximum.x-textSize.x));
+            draw->AddText({textX,maximum.y+8.0f},tickColor,label.c_str());
+        }
+        ImGui::Dummy({0.0f,22.0f});
+    }
     bool ParseFloat3(const std::string& value,DVec3& result)
     {
         std::istringstream stream(value); std::string extra;
         return static_cast<bool>(stream>>result.x>>result.y>>result.z) && !(stream>>extra);
+    }
+    std::string Trim(const std::string& value)
+    {
+        size_t first=0;
+        while (first<value.size() && std::isspace(static_cast<unsigned char>(value[first]))!=0) ++first;
+        size_t last=value.size();
+        while (last>first && std::isspace(static_cast<unsigned char>(value[last-1]))!=0) --last;
+        return value.substr(first,last-first);
     }
     size_t FindTagEnd(const std::string& source,size_t start)
     {
@@ -398,22 +492,26 @@ namespace
         {
             for (int copy=1;copy<=lineCopies;++copy)
             {
-                const DVec3 offset={lineStep[0]*copy,lineStep[1]*copy,lineStep[2]*copy};
+                const double amount=static_cast<double>(copy)/static_cast<double>(lineCopies);
+                const DVec3 offset={lineStep[0]*amount,lineStep[1]*amount,lineStep[2]*amount};
                 instances.push_back({offset,identity});
-                if (copy==1) referenceInstance=static_cast<int>(instances.size()-1);
+                if (copy==lineCopies) referenceInstance=static_cast<int>(instances.size()-1);
                 if (lineFromCenter) instances.push_back({Multiply(offset,-1.0),identity});
             }
         }
         else if (patternType==PatternType::Circle)
         {
-            const double step=circleSweep==360
-                ? 360.0/static_cast<double>(circleCount)
-                : static_cast<double>(circleSweep)/static_cast<double>((std::max)(1,circleCount-1));
+            const bool closedFlatCircle=circleSweep==360 && std::abs(circleVerticalStep)<0.000001f;
+            const double angleDivisor=closedFlatCircle
+                ? static_cast<double>(circleCount)
+                : static_cast<double>((std::max)(1,circleCount-1));
+            const double verticalDivisor=static_cast<double>((std::max)(1,circleCount-1));
             for (int copy=1;copy<circleCount;++copy)
             {
-                const double angle=step*copy*DegreesToRadians;
+                const double angle=static_cast<double>(circleSweep)*copy/angleDivisor*DegreesToRadians;
+                const double verticalAmount=static_cast<double>(copy)/verticalDivisor;
                 const DVec3 offset={circleRadius*(std::cos(angle)-1.0),
-                    circleRadius*std::sin(angle),circleVerticalStep*copy};
+                    circleRadius*std::sin(angle),circleVerticalStep*verticalAmount};
                 instances.push_back({offset,circleKeepOrientation ? identity : RotationZ(angle)});
                 if (copy==1) referenceInstance=static_cast<int>(instances.size()-1);
             }
@@ -475,10 +573,27 @@ namespace
     void UpdateCounter()
     {
         std::map<int,DecorationCounterWindow::Requirement> byId;
-        for (const SourceProp& prop:sourceProps)
+        if (sourceMode==SourceMode::XmlGroups)
         {
-            auto& item=byId[prop.id]; item.id=prop.id; item.name=prop.name;
-            item.required+=static_cast<int>(instances.size());
+            for (const SourceProp& prop:allSourceProps)
+            {
+                auto& item=byId[prop.id]; item.id=prop.id; item.name=prop.name;
+                ++item.required;
+            }
+            const int extraCopies=(std::max)(0,static_cast<int>(instances.size())-1);
+            for (const SourceProp& prop:sourceProps)
+            {
+                auto& item=byId[prop.id]; item.id=prop.id; item.name=prop.name;
+                item.required+=extraCopies;
+            }
+        }
+        else
+        {
+            for (const SourceProp& prop:sourceProps)
+            {
+                auto& item=byId[prop.id]; item.id=prop.id; item.name=prop.name;
+                item.required+=static_cast<int>(instances.size());
+            }
         }
         std::vector<DecorationCounterWindow::Requirement> output;
         for (const auto& [id,item]:byId) { static_cast<void>(id); output.push_back(item); }
@@ -490,10 +605,30 @@ namespace
         generatedProps.clear();
         if (sourceProps.empty()) return;
         BuildInstances();
-        unrotatedPatternPivot={};
-        for (const Instance& instance:instances)
-            unrotatedPatternPivot=Add(unrotatedPatternPivot,Add(sourcePivot,instance.offset));
-        unrotatedPatternPivot=Multiply(unrotatedPatternPivot,1.0/static_cast<double>(instances.size()));
+        if (patternType==PatternType::Line && lineCopies>0)
+        {
+            unrotatedPatternPivot=lineFromCenter
+                ? sourcePivot
+                : Add(sourcePivot,{lineStep[0]*0.5,lineStep[1]*0.5,lineStep[2]*0.5});
+        }
+        else if (patternType==PatternType::Circle)
+        {
+            const double sweepRadians=static_cast<double>(circleSweep)*DegreesToRadians;
+            const double averageCos=std::sin(sweepRadians)/sweepRadians;
+            const double averageSin=(1.0-std::cos(sweepRadians))/sweepRadians;
+            unrotatedPatternPivot=Add(sourcePivot,{
+                circleRadius*(averageCos-1.0),
+                circleRadius*averageSin,
+                circleVerticalStep*0.5
+            });
+        }
+        else
+        {
+            unrotatedPatternPivot={};
+            for (const Instance& instance:instances)
+                unrotatedPatternPivot=Add(unrotatedPatternPivot,Add(sourcePivot,instance.offset));
+            unrotatedPatternPivot=Multiply(unrotatedPatternPivot,1.0/static_cast<double>(instances.size()));
+        }
         patternWorldPivot=Add(unrotatedPatternPivot,translation);
         generatedProps.reserve(sourceProps.size()*instances.size());
         for (size_t instanceIndex=0;instanceIndex<instances.size();++instanceIndex)
@@ -530,6 +665,206 @@ namespace
             Multiply(wholePatternRotation,DVec3{side,0,0})
         );
         if (updateCounter) UpdateCounter();
+    }
+
+    void RebuildPatternPreservingMain(bool updateCounter=true)
+    {
+        const bool preserveMain=!generatedProps.empty();
+        const DVec3 fixedMain=mainCenter;
+        RebuildPattern(false);
+        if (preserveMain)
+        {
+            translation=Add(translation,Subtract(fixedMain,mainCenter));
+            RebuildPattern(updateCounter);
+        }
+        else if (updateCounter)
+        {
+            UpdateCounter();
+        }
+    }
+
+    PatternState CapturePatternState()
+    {
+        PatternState state;
+        state.patternType=patternType; state.squareOrigin=squareOrigin;
+        state.lineCopies=lineCopies; state.lineFromCenter=lineFromCenter;
+        std::copy(std::begin(lineStep),std::end(lineStep),std::begin(state.lineStep));
+        state.circleCount=circleCount; state.circleSweep=circleSweep;
+        state.circleRadius=circleRadius; state.circleVerticalStep=circleVerticalStep;
+        state.circleKeepOrientation=circleKeepOrientation;
+        state.squareX=squareX; state.squareY=squareY;
+        state.squareCenterX=squareCenterX; state.squareCenterY=squareCenterY;
+        std::copy(std::begin(squareSpacing),std::end(squareSpacing),std::begin(state.squareSpacing));
+        state.squareVerticalOffset=squareVerticalOffset;
+        std::copy(std::begin(cubeCount),std::end(cubeCount),std::begin(state.cubeCount));
+        std::copy(std::begin(cubeSpacing),std::end(cubeSpacing),std::begin(state.cubeSpacing));
+        state.translation=translation; state.objectRotation=objectRotation;
+        state.wholePatternRotation=wholePatternRotation;
+        std::copy(std::begin(objectRotationDegrees),std::end(objectRotationDegrees),
+            std::begin(state.objectRotationDegrees));
+        std::copy(std::begin(patternRotationDegrees),std::end(patternRotationDegrees),
+            std::begin(state.patternRotationDegrees));
+        return state;
+    }
+
+    bool PatternStatesEqual(const PatternState& a,const PatternState& b)
+    {
+        if (a.patternType!=b.patternType || a.squareOrigin!=b.squareOrigin ||
+            a.lineCopies!=b.lineCopies || a.lineFromCenter!=b.lineFromCenter ||
+            a.circleCount!=b.circleCount || a.circleSweep!=b.circleSweep ||
+            a.circleRadius!=b.circleRadius || a.circleVerticalStep!=b.circleVerticalStep ||
+            a.circleKeepOrientation!=b.circleKeepOrientation || a.squareX!=b.squareX ||
+            a.squareY!=b.squareY || a.squareCenterX!=b.squareCenterX ||
+            a.squareCenterY!=b.squareCenterY || a.squareVerticalOffset!=b.squareVerticalOffset)
+            return false;
+        for (int i=0;i<3;++i)
+        {
+            if (a.lineStep[i]!=b.lineStep[i] || a.cubeCount[i]!=b.cubeCount[i] ||
+                a.cubeSpacing[i]!=b.cubeSpacing[i] ||
+                a.objectRotationDegrees[i]!=b.objectRotationDegrees[i] ||
+                a.patternRotationDegrees[i]!=b.patternRotationDegrees[i]) return false;
+            for (int row=0;row<3;++row)
+                if (a.objectRotation.m[row][i]!=b.objectRotation.m[row][i] ||
+                    a.wholePatternRotation.m[row][i]!=b.wholePatternRotation.m[row][i]) return false;
+        }
+        for (int i=0;i<2;++i) if (a.squareSpacing[i]!=b.squareSpacing[i]) return false;
+        return a.translation.x==b.translation.x && a.translation.y==b.translation.y &&
+            a.translation.z==b.translation.z;
+    }
+
+    void ApplyPatternState(const PatternState& state)
+    {
+        patternType=state.patternType; squareOrigin=state.squareOrigin;
+        lineCopies=state.lineCopies; lineFromCenter=state.lineFromCenter;
+        std::copy(std::begin(state.lineStep),std::end(state.lineStep),std::begin(lineStep));
+        circleCount=state.circleCount; circleSweep=state.circleSweep;
+        circleRadius=state.circleRadius; circleVerticalStep=state.circleVerticalStep;
+        circleKeepOrientation=state.circleKeepOrientation;
+        squareX=state.squareX; squareY=state.squareY;
+        squareCenterX=state.squareCenterX; squareCenterY=state.squareCenterY;
+        std::copy(std::begin(state.squareSpacing),std::end(state.squareSpacing),std::begin(squareSpacing));
+        squareVerticalOffset=state.squareVerticalOffset;
+        std::copy(std::begin(state.cubeCount),std::end(state.cubeCount),std::begin(cubeCount));
+        std::copy(std::begin(state.cubeSpacing),std::end(state.cubeSpacing),std::begin(cubeSpacing));
+        translation=state.translation; objectRotation=state.objectRotation;
+        wholePatternRotation=state.wholePatternRotation;
+        std::copy(std::begin(state.objectRotationDegrees),std::end(state.objectRotationDegrees),
+            std::begin(objectRotationDegrees));
+        std::copy(std::begin(state.patternRotationDegrees),std::end(state.patternRotationDegrees),
+            std::begin(patternRotationDegrees));
+        RebuildPattern();
+    }
+
+    void ClearPatternHistory()
+    {
+        undoHistory.clear(); redoHistory.clear(); historyActionActive=false;
+        uiHistoryActive=false; pendingHistoryLabel.clear();
+    }
+
+    void BeginPatternHistory(const char* label)
+    {
+        if (sourceMode!=SourceMode::XmlGroups || sourceProps.empty() || historyActionActive) return;
+        pendingHistoryBefore=CapturePatternState(); pendingHistoryLabel=label;
+        historyActionActive=true;
+    }
+
+    void CommitPatternHistory()
+    {
+        if (!historyActionActive) return;
+        PatternHistoryEntry entry;
+        entry.label=pendingHistoryLabel; entry.before=pendingHistoryBefore;
+        entry.after=CapturePatternState();
+        historyActionActive=false; pendingHistoryLabel.clear();
+        if (PatternStatesEqual(entry.before,entry.after)) return;
+        undoHistory.push_back(std::move(entry));
+        if (undoHistory.size()>MaxPatternHistory) undoHistory.erase(undoHistory.begin());
+        redoHistory.clear();
+    }
+
+    void UndoPattern()
+    {
+        CommitPatternHistory();
+        if (undoHistory.empty()) return;
+        PatternHistoryEntry entry=undoHistory.back(); undoHistory.pop_back();
+        ApplyPatternState(entry.before); redoHistory.push_back(std::move(entry));
+        status="Undid the last pattern change. Apply to XML to save the restored state.";
+    }
+
+    void RedoPattern()
+    {
+        CommitPatternHistory();
+        if (redoHistory.empty()) return;
+        PatternHistoryEntry entry=redoHistory.back(); redoHistory.pop_back();
+        ApplyPatternState(entry.after); undoHistory.push_back(std::move(entry));
+        status="Redid the pattern change. Apply to XML to save the restored state.";
+    }
+
+    void ResetPatternTransform()
+    {
+        translation={}; objectRotation=IdentityMatrix(); wholePatternRotation=IdentityMatrix();
+        objectRotationDegrees[0]=objectRotationDegrees[1]=objectRotationDegrees[2]=0.0f;
+        patternRotationDegrees[0]=patternRotationDegrees[1]=patternRotationDegrees[2]=0.0f;
+        activeControl=activeAxis=hoveredControl=0; inputCaptured=false;
+    }
+
+    void ComputeSourcePivot()
+    {
+        sourcePivot={};
+        if (sourceProps.empty()) return;
+        for (const SourceProp& prop:sourceProps) sourcePivot=Add(sourcePivot,prop.position);
+        sourcePivot=Multiply(sourcePivot,1.0/static_cast<double>(sourceProps.size()));
+    }
+
+    bool ImportXml(const std::string& path);
+    void SetSourceMode(SourceMode mode);
+
+    void SelectGroup(int index)
+    {
+        if (groupApplyWritten && index>=0 && index!=selectedGroupIndex)
+        {
+            const std::string requestedName=groups[static_cast<size_t>(index)].name;
+            const std::string path=importedPath;
+            if (!ImportXml(path)) return;
+            SetSourceMode(SourceMode::XmlGroups);
+            for (size_t groupIndex=0;groupIndex<groups.size();++groupIndex)
+                if (groups[groupIndex].name==requestedName)
+                { SelectGroup(static_cast<int>(groupIndex)); return; }
+            status="The requested group was not found after reloading the applied XML.";
+            return;
+        }
+        for (GroupInfo& group:groups) group.selected=false;
+        selectedGroupIndex=index>=0 && index<static_cast<int>(groups.size()) ? index : -1;
+        sourceProps.clear();
+        if (selectedGroupIndex>=0)
+        {
+            GroupInfo& group=groups[static_cast<size_t>(selectedGroupIndex)];
+            group.selected=true; sourceProps.reserve(group.propIndices.size());
+            for (size_t propIndex:group.propIndices) sourceProps.push_back(allSourceProps[propIndex]);
+        }
+        ResetPatternTransform(); ClearPatternHistory(); ComputeSourcePivot();
+        generatedProps.clear(); instances.clear();
+        if (!sourceProps.empty()) RebuildPattern(); else UpdateCounter();
+    }
+
+    void SetSourceMode(SourceMode mode)
+    {
+        if (groupApplyWritten && mode==SourceMode::FullXml)
+        {
+            const std::string path=importedPath;
+            if (ImportXml(path))
+                status="Full XML mode selected with the applied group pattern reloaded.";
+            return;
+        }
+        sourceMode=mode;
+        for (GroupInfo& group:groups) group.selected=false;
+        selectedGroupIndex=-1; sourceProps.clear(); ResetPatternTransform(); ClearPatternHistory();
+        if (sourceMode==SourceMode::FullXml) sourceProps=allSourceProps;
+        ComputeSourcePivot(); generatedProps.clear(); instances.clear();
+        if (!sourceProps.empty()) RebuildPattern(); else UpdateCounter();
+        status=sourceMode==SourceMode::FullXml
+            ? "Full XML mode selected."
+            : groups.empty() ? "This XML does not contain any named decoration groups."
+                : "XML Groups mode selected. Choose one group to pattern.";
     }
 
     bool ImportXml(const std::string& path)
@@ -580,22 +915,49 @@ namespace
         }
         if (parsed.empty()) { status="Invalid XML: no positioned prop entries were found."; return false; }
 
-        xmlSource=std::move(source); sourceProps=std::move(parsed);
+        std::vector<GroupInfo> parsedGroups;
+        size_t comment=source.find("<!--",rootEnd+1);
+        while (comment!=std::string::npos && comment<rootClose)
+        {
+            const size_t commentEndMarker=source.find("-->",comment+4);
+            if (commentEndMarker==std::string::npos || commentEndMarker>=rootClose) break;
+            const size_t next=source.find("<!--",commentEndMarker+3);
+            const size_t groupEnd=next==std::string::npos || next>=rootClose ? rootClose : next;
+            GroupInfo group;
+            group.name=Trim(source.substr(comment+4,commentEndMarker-comment-4));
+            group.commentStart=comment; group.commentEnd=commentEndMarker+3;
+            group.contentEnd=groupEnd; group.insertStart=group.commentEnd;
+            if (!group.name.empty())
+            {
+                const int groupIndex=static_cast<int>(parsedGroups.size());
+                for (size_t propIndex=0;propIndex<parsed.size();++propIndex)
+                {
+                    SourceProp& prop=parsed[propIndex];
+                    if (prop.elementStart>commentEndMarker && prop.elementStart<groupEnd)
+                    {
+                        prop.groupIndex=groupIndex; group.propIndices.push_back(propIndex);
+                        group.insertStart=(std::max)(group.insertStart,prop.elementEnd);
+                    }
+                }
+                if (!group.propIndices.empty()) parsedGroups.push_back(std::move(group));
+            }
+            comment=next;
+        }
+
+        xmlSource=std::move(source); allSourceProps=std::move(parsed); groups=std::move(parsedGroups);
+        importedPath=path;
+        groupApplyWritten=false;
         const size_t firstGroupComment=xmlSource.find("<!--",rootEnd+1);
         copyInsertStart=firstGroupComment!=std::string::npos && firstGroupComment<rootClose
             ? firstGroupComment : rootClose;
         xmlType=typeText=="1" ? 1 : 0;
         importedFileName=Utf8Paths::ToUtf8(Utf8Paths::FromUtf8(path).filename());
-        sourcePivot={};
-        for (const SourceProp& prop:sourceProps) sourcePivot=Add(sourcePivot,prop.position);
-        sourcePivot=Multiply(sourcePivot,1.0/static_cast<double>(sourceProps.size()));
-        translation={}; objectRotation=IdentityMatrix(); wholePatternRotation=IdentityMatrix();
-        objectRotationDegrees[0]=objectRotationDegrees[1]=objectRotationDegrees[2]=0.0f;
-        patternRotationDegrees[0]=patternRotationDegrees[1]=patternRotationDegrees[2]=0.0f;
-        RebuildPattern(false);
+        sourceMode=SourceMode::FullXml; selectedGroupIndex=-1;
+        sourceProps=allSourceProps; ResetPatternTransform(); ClearPatternHistory();
+        ComputeSourcePivot(); RebuildPattern(false);
 
         std::map<int,DecorationCounterWindow::Requirement> byId;
-        for (const SourceProp& prop:sourceProps)
+        for (const SourceProp& prop:allSourceProps)
         {
             auto& item=byId[prop.id]; item.id=prop.id; item.name=prop.name;
             item.required+=static_cast<int>(instances.size());
@@ -603,8 +965,8 @@ namespace
         std::vector<DecorationCounterWindow::Requirement> counter;
         for (const auto& [id,item]:byId) { static_cast<void>(id); counter.push_back(item); }
         DecorationCounterWindow::SetRequirements(importedFileName+" Pattern",xmlType,counter);
-        status="Loaded "+std::to_string(sourceProps.size())+" source decorations; pattern has "+
-            std::to_string(instances.size())+" instances.";
+        status="Loaded "+std::to_string(allSourceProps.size())+" decorations and "+
+            std::to_string(groups.size())+" named groups; Full XML mode is active.";
         return true;
     }
 
@@ -675,6 +1037,72 @@ namespace
             }
         output.insert(static_cast<size_t>(adjustedInsert),copies.str());
         return output;
+    }
+
+    std::string BuildGroupPatternXml()
+    {
+        if (selectedGroupIndex<0 || selectedGroupIndex>=static_cast<int>(groups.size())) return xmlSource;
+        const GroupInfo& group=groups[static_cast<size_t>(selectedGroupIndex)];
+        std::vector<Replacement> originals;
+        originals.reserve(sourceProps.size()*2);
+        for (size_t i=0;i<sourceProps.size();++i)
+        {
+            const SourceProp& source=sourceProps[i]; const GeneratedProp& generated=generatedProps[i];
+            originals.push_back({source.positionStart,source.positionLength,PositionText(generated.position)});
+            originals.push_back(source.hasRotation
+                ? Replacement{source.rotationStart,source.rotationLength,RotationText(generated.rotation)}
+                : Replacement{source.tagEnd,0," rot=\""+RotationText(generated.rotation)+"\""});
+        }
+        std::sort(originals.begin(),originals.end(),[](const Replacement& a,const Replacement& b)
+        { return a.start>b.start; });
+        std::string output=xmlSource;
+        std::ptrdiff_t adjustedInsert=static_cast<std::ptrdiff_t>(group.insertStart);
+        for (const Replacement& replacement:originals)
+        {
+            output.replace(replacement.start,replacement.length,replacement.value);
+            if (replacement.start<group.insertStart)
+                adjustedInsert+=static_cast<std::ptrdiff_t>(replacement.value.size())-
+                    static_cast<std::ptrdiff_t>(replacement.length);
+        }
+        const char* newline=xmlSource.find("\r\n")!=std::string::npos ? "\r\n" : "\n";
+        std::set<std::string> usedGroupNames;
+        for (const GroupInfo& existingGroup:groups) usedGroupNames.insert(existingGroup.name);
+        int nextCopyNumber=1;
+        std::ostringstream copies;
+        for (size_t instanceIndex=1;instanceIndex<instances.size();++instanceIndex)
+        {
+            std::string copyName;
+            do
+            {
+                copyName=group.name+" (Copy "+std::to_string(nextCopyNumber++)+")";
+            }
+            while (usedGroupNames.find(copyName)!=usedGroupNames.end());
+            usedGroupNames.insert(copyName);
+            copies<<newline<<"  <!-- "<<copyName<<" -->";
+            for (size_t sourceIndex=0;sourceIndex<sourceProps.size();++sourceIndex)
+            {
+                const size_t generatedIndex=instanceIndex*sourceProps.size()+sourceIndex;
+                copies<<newline<<"  "<<RewriteElement(sourceProps[sourceIndex],generatedProps[generatedIndex]);
+            }
+        }
+        output.insert(static_cast<size_t>(adjustedInsert),copies.str());
+        return output;
+    }
+
+    void ApplyPatternToXml()
+    {
+        CommitPatternHistory();
+        if (sourceMode!=SourceMode::XmlGroups || sourceProps.empty() || selectedGroupIndex<0)
+        { status="Select one XML group to pattern first."; return; }
+        const std::string output=BuildGroupPatternXml();
+        std::ofstream file(Utf8Paths::FromUtf8(importedPath),std::ios::binary|std::ios::trunc);
+        if (!file.is_open()) { status="Could not open the imported XML for writing."; return; }
+        file.write(output.data(),static_cast<std::streamsize>(output.size()));
+        if (!file.good()) { status="The pattern could not be written completely."; return; }
+        groupApplyWritten=true;
+        status="Applied the pattern to group \""+
+            groups[static_cast<size_t>(selectedGroupIndex)].name+
+            "\" in "+importedFileName+". Undo and Redo history remains available.";
     }
 
     void ExportPattern()
@@ -816,7 +1244,9 @@ namespace
         }
         else if (patternType==PatternType::Circle)
         {
-            if (axis==2) circleVerticalStep=dragStartCircleVertical+delta;
+            if (axis==2)
+                circleVerticalStep=dragStartCircleVertical+
+                    delta*static_cast<float>((std::max)(1,circleCount-1));
             else circleRadius=(std::max)(1.0f,dragStartCircleRadius+delta);
         }
         else if (patternType==PatternType::Square)
@@ -828,7 +1258,7 @@ namespace
         {
             cubeSpacing[axis]=dragStartCubeSpacing[axis]+delta;
         }
-        RebuildPattern();
+        RebuildPatternPreservingMain();
         status="Adjusted pattern spacing with the gray manipulator.";
     }
 
@@ -943,6 +1373,8 @@ namespace
         clickPending=false;
         if (clicked && activeControl==0 && hoveredControl!=0)
         {
+            BeginPatternHistory(hoveredControl==3 || hoveredControl==4
+                ? "pattern rotation" : "pattern move");
             activeControl=hoveredControl; activeAxis=hoveredAxisLocal; inputCaptured=true;
             dragStartMouse=mouse; dragStartTranslation=translation; CaptureOffsetSnapshot();
             if (activeControl==3) dragStartRotation=objectRotation;
@@ -1010,7 +1442,69 @@ namespace
         }
         if (activeControl!=0 && !mouseDown && inputCaptured)
         {
+            CommitPatternHistory();
             activeControl=0; activeAxis=0; inputCaptured=false;
+        }
+    }
+
+    void DrawGroupSelection(const Camera& camera,ImVec2 viewport,ImDrawList* draw)
+    {
+        if (sourceMode!=SourceMode::XmlGroups) { hoveredPointGroup=-1; return; }
+        const AppSettings::Data& settings=AppSettings::Get();
+        const ImVec2 mouse=ImGui::GetIO().MousePos;
+        const float pointSize=(std::max)(2.0f,settings.pointSize);
+        const float hitRadius=pointSize+5.0f;
+        const ImU32 contextColor=IM_COL32(255,166,36,255);
+        hoveredPointGroup=-1; float closest=std::numeric_limits<float>::infinity();
+        auto considerPoint=[&](DVec3 position,int groupIndex,bool drawContext)
+        {
+            ImVec2 point;
+            if (!camera.Project(DecorationToWorld(position),viewport,point)) return;
+            if (drawContext && settings.showDecorationPoints)
+                draw->AddCircleFilled(point,pointSize,contextColor,12);
+            const float dx=mouse.x-point.x,dy=mouse.y-point.y;
+            const float distance=std::sqrt(dx*dx+dy*dy);
+            if (distance<=hitRadius && distance<closest)
+            { closest=distance; hoveredPointGroup=groupIndex; }
+        };
+        for (const SourceProp& prop:allSourceProps)
+        {
+            if (prop.groupIndex<0 || prop.groupIndex>=static_cast<int>(groups.size())) continue;
+            if (prop.groupIndex!=selectedGroupIndex)
+                considerPoint(prop.position,prop.groupIndex,true);
+        }
+        if (selectedGroupIndex>=0)
+            for (const GeneratedProp& prop:generatedProps)
+                if (prop.instanceIndex==0) considerPoint(prop.position,selectedGroupIndex,false);
+        const bool leftClicked=pointClickPending || (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+            !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow));
+        const bool rightClicked=pointRightClickPending || (ImGui::IsMouseClicked(ImGuiMouseButton_Right) &&
+            !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow));
+        pointClickPending=false; pointRightClickPending=false;
+        if (hoveredPointGroup<0 || hoveredPointGroup>=static_cast<int>(groups.size())) return;
+
+        const std::string& name=groups[static_cast<size_t>(hoveredPointGroup)].name;
+        const ImVec2 textSize=ImGui::CalcTextSize(name.c_str()); const ImVec2 padding(7.0f,5.0f);
+        ImVec2 tooltip(mouse.x+18.0f,mouse.y+8.0f);
+        const ImVec2 size(textSize.x+padding.x*2.0f,textSize.y+padding.y*2.0f);
+        tooltip.x=(std::min)(tooltip.x,(std::max)(4.0f,viewport.x-size.x-4.0f));
+        tooltip.y=(std::min)(tooltip.y,(std::max)(4.0f,viewport.y-size.y-4.0f));
+        ImDrawList* foreground=ImGui::GetForegroundDrawList();
+        foreground->AddRectFilled(tooltip,{tooltip.x+size.x,tooltip.y+size.y},IM_COL32(24,24,28,245),4.0f);
+        foreground->AddText({tooltip.x+padding.x,tooltip.y+padding.y},IM_COL32(255,255,255,255),name.c_str());
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand); ImGui::GetIO().WantCaptureMouse=true;
+        if (activeControl==0)
+        {
+            if (rightClicked && selectedGroupIndex==hoveredPointGroup)
+            {
+                const std::string deselected=name; SelectGroup(-1);
+                status="Deselected group: "+deselected+".";
+            }
+            else if (leftClicked && selectedGroupIndex!=hoveredPointGroup)
+            {
+                const int selected=hoveredPointGroup; const std::string selectedName=name;
+                SelectGroup(selected); status="Selected group: "+selectedName+".";
+            }
         }
     }
 
@@ -1018,8 +1512,10 @@ namespace
     {
         if (generatedProps.empty()) return;
         const AppSettings::Data& settings=AppSettings::Get();
-        const ImU32 originalColor=ImGui::ColorConvertFloat4ToU32({settings.pointColor[0],
-            settings.pointColor[1],settings.pointColor[2],settings.pointColor[3]});
+        const ImU32 originalColor=sourceMode==SourceMode::XmlGroups
+            ? IM_COL32(50,150,255,255)
+            : ImGui::ColorConvertFloat4ToU32({settings.pointColor[0],settings.pointColor[1],
+                settings.pointColor[2],settings.pointColor[3]});
         const ImU32 copyColor=ImGui::ColorConvertFloat4ToU32({0.70f,0.72f,0.76f,0.95f});
         if (settings.showDecorationPoints)
             for (const GeneratedProp& prop:generatedProps)
@@ -1068,7 +1564,11 @@ namespace
 
 void PatternsTab::Render()
 {
-    const bool hasXml=!sourceProps.empty(); InitializeXmlList();
+    const bool hasImported=!allSourceProps.empty();
+    const bool hasXml=!sourceProps.empty();
+    const PatternState frameBefore=CapturePatternState();
+    bool uiChanged=false;
+    InitializeXmlList();
     RenderSectionHeading("Import");
     ImGui::Dummy({0,12}); ImGui::Text("Import Decoration XML");
     if (ImGui::RadioButton("Homestead",&selectedFolderType,0)) RefreshXmlList();
@@ -1096,6 +1596,39 @@ void PatternsTab::Render()
     else RenderDisabledButton("Import Selected",{actionWidth,0});
     ImGui::TextDisabled("%s",status.c_str());
 
+    ImGui::Dummy({0,16}); RenderSectionHeading("Pattern Source");
+    int sourceValue=static_cast<int>(sourceMode);
+    bool sourceModeChanged=false;
+    if (ImGui::RadioButton("Full XML",&sourceValue,0)) sourceModeChanged=true;
+    ImGui::SameLine();
+    if (ImGui::RadioButton("XML Groups",&sourceValue,1)) sourceModeChanged=true;
+    if (sourceModeChanged && hasImported) SetSourceMode(static_cast<SourceMode>(sourceValue));
+    else if (!hasImported) sourceMode=static_cast<SourceMode>(sourceValue);
+
+    if (sourceMode==SourceMode::XmlGroups && hasImported)
+    {
+        ImGui::TextDisabled("Select one group here, or click any grouped point in the scene.");
+        if (groups.empty()) ImGui::TextDisabled("This XML does not contain any named decoration groups.");
+        else
+        {
+            ImGui::BeginChild("##PatternGroupList",ImVec2(0.0f,170.0f),true);
+            for (size_t index=0;index<groups.size();++index)
+            {
+                const GroupInfo& group=groups[index];
+                bool selected=selectedGroupIndex==static_cast<int>(index);
+                const std::string label=group.name+" ("+std::to_string(group.propIndices.size())+
+                    " decorations)##PatternGroup"+std::to_string(index);
+                if (ImGui::Checkbox(label.c_str(),&selected))
+                {
+                    const std::string name=group.name;
+                    SelectGroup(selected ? static_cast<int>(index) : -1);
+                    status=selected ? "Selected group: "+name+"." : "Deselected group: "+name+".";
+                }
+            }
+            ImGui::EndChild();
+        }
+    }
+
     ImGui::Dummy({0,16}); RenderSectionHeading("Pattern Type");
     bool patternChanged=false;
     int typeValue=static_cast<int>(patternType);
@@ -1109,15 +1642,17 @@ void PatternsTab::Render()
     {
         patternChanged|=ImGui::SliderInt("Copies",&lineCopies,0,50);
         patternChanged|=ImGui::Checkbox("From Center",&lineFromCenter);
-        ImGui::SetNextItemWidth(360); patternChanged|=ImGui::InputFloat3("Step XYZ",lineStep,"%.3f");
+        ImGui::SetNextItemWidth(360); patternChanged|=ImGui::InputFloat3("Total Offset XYZ",lineStep,"%.3f");
     }
     else if (patternType==PatternType::Circle)
     {
-        patternChanged|=ImGui::SliderInt("Pattern Count",&circleCount,2,12);
-        patternChanged|=ImGui::SliderInt("Sweep",&circleSweep,1,360,"%d degrees");
+        patternChanged|=ImGui::SliderInt("Pattern Count",&circleCount,2,72);
+        ImGui::Text("Sweep"); ImGui::SetNextItemWidth(-1.0f);
+        patternChanged|=ImGui::SliderInt("##CircleSweep",&circleSweep,1,1080,"%d degrees");
+        RenderSweepMarks();
         patternChanged|=ImGui::InputFloat("Radius",&circleRadius,1.0f,10.0f,"%.3f");
         circleRadius=(std::max)(1.0f,circleRadius);
-        patternChanged|=ImGui::InputFloat("Vertical Step",&circleVerticalStep,1.0f,10.0f,"%.3f");
+        patternChanged|=ImGui::InputFloat("Total Vertical Offset",&circleVerticalStep,1.0f,10.0f,"%.3f");
         patternChanged|=ImGui::Checkbox("Keep Orientation",&circleKeepOrientation);
     }
     else if (patternType==PatternType::Square)
@@ -1147,7 +1682,8 @@ void PatternsTab::Render()
     }
     if (patternChanged && hasXml)
     {
-        RebuildPattern();
+        uiChanged=true;
+        RebuildPatternPreservingMain();
         status="Updated pattern: "+std::to_string(instances.size())+" total instances, "+
             std::to_string(generatedProps.size())+" decorations.";
     }
@@ -1163,6 +1699,7 @@ void PatternsTab::Render()
     ImGui::Text("Move"); ImGui::SameLine(); ImGui::SetNextItemWidth(360);
     if (hasXml && ImGui::InputFloat3("##PatternPosition",position,"%.3f"))
     {
+        uiChanged=true;
         translation=Add(translation,{position[0]-mainCenter.x,position[1]-mainCenter.y,position[2]-mainCenter.z});
         RebuildPattern(false); status="Updated the complete pattern position.";
     }
@@ -1175,6 +1712,7 @@ void PatternsTab::Render()
     float objectEdited[3]={objectRotationDegrees[0],objectRotationDegrees[1],objectRotationDegrees[2]};
     if (hasXml && ImGui::InputFloat3("##PatternObjectRotation",objectEdited,"%.3f"))
     {
+        uiChanged=true;
         objectRotation=DegreesToMatrix(objectEdited); MatrixToDegrees(objectRotation,objectRotationDegrees);
         RebuildPattern(false); status="Rotated every pattern instance in place.";
     }
@@ -1182,39 +1720,75 @@ void PatternsTab::Render()
     float patternEdited[3]={patternRotationDegrees[0],patternRotationDegrees[1],patternRotationDegrees[2]};
     if (hasXml && ImGui::InputFloat3("##WholePatternRotation",patternEdited,"%.3f"))
     {
+        uiChanged=true;
         wholePatternRotation=DegreesToMatrix(patternEdited); MatrixToDegrees(wholePatternRotation,patternRotationDegrees);
         RebuildPattern(false); status="Rotated the complete pattern around its center.";
     }
 
-    ImGui::Dummy({0,16});
-    if (hasXml)
+    if (sourceMode==SourceMode::XmlGroups && hasXml)
     {
-        if (ImGui::Button("Export Pattern XML")) ExportPattern();
+        if (uiChanged && !historyActionActive)
+        {
+            pendingHistoryBefore=frameBefore; pendingHistoryLabel="pattern settings";
+            historyActionActive=true; uiHistoryActive=true;
+        }
+        if (uiHistoryActive && historyActionActive && !ImGui::IsAnyItemActive())
+        { CommitPatternHistory(); uiHistoryActive=false; }
     }
-    else RenderDisabledButton("Export Pattern XML");
+
+    ImGui::Dummy({0,16});
+    if (sourceMode==SourceMode::FullXml)
+    {
+        if (hasXml)
+        {
+            if (ImGui::Button("Export Pattern XML")) ExportPattern();
+        }
+        else RenderDisabledButton("Export Pattern XML");
+    }
+    else
+    {
+        const float buttonWidth=(ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemSpacing.x*2.0f)/3.0f;
+        if (!undoHistory.empty())
+        { if (ImGui::Button("Undo##Pattern",{buttonWidth,0})) UndoPattern(); }
+        else RenderDisabledButton("Undo##Pattern",{buttonWidth,0});
+        ImGui::SameLine();
+        if (!redoHistory.empty())
+        { if (ImGui::Button("Redo##Pattern",{buttonWidth,0})) RedoPattern(); }
+        else RenderDisabledButton("Redo##Pattern",{buttonWidth,0});
+        ImGui::SameLine();
+        if (hasXml)
+        { if (ImGui::Button("Apply to XML",{buttonWidth,0})) ApplyPatternToXml(); }
+        else RenderDisabledButton("Apply to XML",{buttonWidth,0});
+    }
 }
 
 void PatternsTab::RenderOverlay()
 {
-    if (sourceProps.empty()) { hoveredControl=activeControl=0; inputCaptured=false; return; }
+    if (allSourceProps.empty()) { hoveredControl=activeControl=0; hoveredPointGroup=-1; inputCaptured=false; return; }
     Mumble::Data* mumble=AppRuntime::GetMumble();
     if (mumble==nullptr || mumble->Context.MapID==0) { hoveredControl=activeControl=0; inputCaptured=false; return; }
     ImGuiIO& io=ImGui::GetIO();
     if (!inputCaptured && io.MousePos.x>=0 && io.MousePos.y>=0)
     { wndMousePosition=io.MousePos; mouseDown=io.MouseDown[0]; }
     const Camera camera=CameraFromMumble(*mumble); ImDrawList* draw=ImGui::GetBackgroundDrawList();
-    DrawPreview(camera,io.DisplaySize,draw); DrawManipulators(camera,io.DisplaySize,draw);
+    DrawGroupSelection(camera,io.DisplaySize,draw);
+    if (!sourceProps.empty())
+    { DrawPreview(camera,io.DisplaySize,draw); DrawManipulators(camera,io.DisplaySize,draw); }
 }
 
 void PatternsTab::ClearImportedData()
 {
-    DecorationCounterWindow::Clear(); xmlSource.clear(); importedFileName.clear();
-    sourceProps.clear(); instances.clear(); generatedProps.clear(); copyInsertStart=0; xmlType=-1;
+    DecorationCounterWindow::Clear(); xmlSource.clear(); importedPath.clear(); importedFileName.clear();
+    allSourceProps.clear(); sourceProps.clear(); groups.clear(); instances.clear(); generatedProps.clear();
+    copyInsertStart=0; xmlType=-1; sourceMode=SourceMode::FullXml; selectedGroupIndex=-1;
     selectedXmlIndex=-1; status="No XML imported"; sourcePivot={}; translation={};
     objectRotation=IdentityMatrix(); wholePatternRotation=IdentityMatrix();
     objectRotationDegrees[0]=objectRotationDegrees[1]=objectRotationDegrees[2]=0;
     patternRotationDegrees[0]=patternRotationDegrees[1]=patternRotationDegrees[2]=0;
     hoveredControl=activeControl=activeAxis=0; inputCaptured=mouseDown=clickPending=false;
+    hoveredPointGroup=-1; pointClickPending=pointRightClickPending=pointRightClickCaptured=false;
+    groupApplyWritten=false;
+    ClearPatternHistory();
     operationMode=0;
 }
 
@@ -1223,21 +1797,29 @@ UINT PatternsTab::WndProc(HWND,UINT message,WPARAM,LPARAM lParam)
     switch (message)
     {
     case WM_MOUSEMOVE: case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK:
+    case WM_RBUTTONDOWN: case WM_RBUTTONUP:
         wndMousePosition={static_cast<float>(static_cast<short>(LOWORD(lParam))),
             static_cast<float>(static_cast<short>(HIWORD(lParam)))}; break;
     default: return 1;
     }
-    const bool canClaim=inputCaptured || activeControl!=0 || hoveredControl!=0;
+    const bool hoveringGroup=sourceMode==SourceMode::XmlGroups && hoveredPointGroup>=0;
+    const bool canClaim=inputCaptured || activeControl!=0 || hoveredControl!=0 || hoveringGroup;
     if (message==WM_LBUTTONDOWN || message==WM_LBUTTONDBLCLK)
     {
+        if (hoveringGroup && activeControl==0)
+        { pointClickPending=true; return 0; }
         if (canClaim) { inputCaptured=true; mouseDown=true; clickPending=true; return 0; }
     }
     else if (message==WM_LBUTTONUP)
     {
         mouseDown=false;
         if (inputCaptured || activeControl!=0)
-        { inputCaptured=false; activeControl=activeAxis=0; return 0; }
+        { CommitPatternHistory(); inputCaptured=false; activeControl=activeAxis=0; return 0; }
     }
+    else if (message==WM_RBUTTONDOWN && hoveringGroup && activeControl==0)
+    { pointRightClickPending=true; pointRightClickCaptured=true; return 0; }
+    else if (message==WM_RBUTTONUP && pointRightClickCaptured)
+    { pointRightClickCaptured=false; return 0; }
     else if (message==WM_MOUSEMOVE && (inputCaptured || activeControl!=0)) return 0;
     return 1;
 }

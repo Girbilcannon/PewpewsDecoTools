@@ -158,7 +158,6 @@
     <Image Include="src\Resources\nav_patterns.png" />
     <Image Include="src\Resources\nav_map_swap.png" />
     <Image Include="src\Resources\nav_group_tools.png" />
-    <Image Include="src\Resources\nav_group_mover.png" />
     <Image Include="src\Resources\nav_documentation.png" />
     <Image Include="src\Resources\nav_settings.png" />
   </ItemGroup>

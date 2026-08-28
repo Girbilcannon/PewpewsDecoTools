@@ -3,6 +3,7 @@
 // in-game, supports interactive positioning, and exports relocated layouts.
 
 #include "MoveToolTab.h"
+#include "GroupMoverTab.h"
 
 #include "../../Core/AppRuntime.h"
 #include "../../Core/AppSettings.h"
@@ -32,6 +33,14 @@ namespace
     constexpr float DecorationScale = 0.025400052f;
     constexpr float NearClip = 0.05f;
     constexpr float DefaultFovRadians = 0.872664626f;
+
+    enum class MoveSourceMode
+    {
+        FullXml,
+        XmlGroups
+    };
+
+    MoveSourceMode moveSourceMode = MoveSourceMode::FullXml;
 
     struct Vec3
     {
@@ -91,6 +100,7 @@ namespace
 
     std::string xmlSource;
     std::string importedFileName;
+    std::string sharedImportedPath;
     std::string status = "No XML imported";
     std::vector<PropPosition> props;
     std::vector<XmlFileEntry> availableXmlFiles;
@@ -1878,9 +1888,17 @@ void MoveToolTab::Render()
     {
         if (ImGui::Button("Import Selected", ImVec2(actionWidth, 0.0f)))
         {
-            ImportXml(
-                availableXmlFiles[static_cast<size_t>(selectedXmlIndex)].path
-            );
+            const std::string& path=
+                availableXmlFiles[static_cast<size_t>(selectedXmlIndex)].path;
+            const bool imported=moveSourceMode==MoveSourceMode::FullXml
+                ? ImportXml(path)
+                : GroupMoverTab::ImportPath(path);
+            if (imported)
+            {
+                sharedImportedPath=path;
+                if (moveSourceMode==MoveSourceMode::XmlGroups)
+                    status="Imported the selected XML for XML Groups.";
+            }
         }
     }
     else
@@ -1892,7 +1910,45 @@ void MoveToolTab::Render()
     }
 
     ImGui::TextDisabled("%s", status.c_str());
-    ImGui::Spacing();
+
+    ImGui::Dummy(ImVec2(0.0f,16.0f));
+    RenderSectionHeading("Move Source");
+    int sourceMode=static_cast<int>(moveSourceMode);
+    bool sourceChanged=false;
+    if (ImGui::RadioButton("Full XML",&sourceMode,0)) sourceChanged=true;
+    ImGui::SameLine();
+    if (ImGui::RadioButton("XML Groups",&sourceMode,1)) sourceChanged=true;
+    if (sourceChanged)
+    {
+        const std::string path=sharedImportedPath;
+        const int previousSelection=selectedXmlIndex;
+        ClearImportedData();
+        moveSourceMode=static_cast<MoveSourceMode>(sourceMode);
+        selectedXmlIndex=previousSelection;
+        if (!path.empty())
+        {
+            const bool imported=moveSourceMode==MoveSourceMode::FullXml
+                ? ImportXml(path)
+                : GroupMoverTab::ImportPath(path);
+            if (imported)
+            {
+                sharedImportedPath=path;
+                if (moveSourceMode==MoveSourceMode::XmlGroups)
+                    status="Switched the imported XML to XML Groups.";
+            }
+        }
+    }
+    if (moveSourceMode==MoveSourceMode::FullXml)
+        ImGui::TextDisabled("Exports a new XML; the imported file remains unchanged.");
+    else
+        ImGui::TextDisabled("Applies selected-group changes directly to the imported XML.");
+
+    if (moveSourceMode==MoveSourceMode::XmlGroups)
+    {
+        ImGui::Dummy(ImVec2(0.0f,12.0f));
+        GroupMoverTab::RenderWorkspace();
+        return;
+    }
 
     ImGui::Dummy(ImVec2(0.0f, 16.0f));
     RenderSectionHeading("Position & Rotation");
@@ -2065,6 +2121,11 @@ void MoveToolTab::Render()
 
 void MoveToolTab::RenderOverlay()
 {
+    if (moveSourceMode==MoveSourceMode::XmlGroups)
+    {
+        GroupMoverTab::RenderOverlay();
+        return;
+    }
     if (props.empty())
     {
         hoveredAxis = 0;
@@ -2099,9 +2160,11 @@ void MoveToolTab::RenderOverlay()
 
 void MoveToolTab::ClearImportedData()
 {
+    GroupMoverTab::ClearImportedData();
     DecorationCounterWindow::Clear();
     std::string().swap(xmlSource);
     std::string().swap(importedFileName);
+    std::string().swap(sharedImportedPath);
     std::vector<PropPosition>().swap(props);
 
     anchorPosition[0] = 0.0f;
@@ -2125,10 +2188,13 @@ void MoveToolTab::ClearImportedData()
     accumulatedGroupRotation = IdentityMatrix();
     rotationDragStartPositions.clear();
     rotationDragStartOrientations.clear();
+    moveSourceMode=MoveSourceMode::FullXml;
 }
 
-UINT MoveToolTab::WndProc(HWND, UINT message, WPARAM, LPARAM lParam)
+UINT MoveToolTab::WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    if (moveSourceMode==MoveSourceMode::XmlGroups)
+        return GroupMoverTab::WndProc(window,message,wParam,lParam);
     switch (message)
     {
     case WM_MOUSEMOVE:
