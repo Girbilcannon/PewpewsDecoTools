@@ -346,7 +346,7 @@ namespace
         RenderBullet("Remember addon window state",
             "Remembers the addon's window state and tool options between sessions.");
         RenderBullet("Show decoration count window",
-            "Shows or hides the Decoration Counter, which is especially useful for merging, map swapping, and pattern creation. The window can also be reopened by clicking the addon icon in the game menu bar twice to turn the addon windows off and back on without changing the active tool state.");
+            "Shows or hides the Decoration Counter, which is especially useful for merging, map swapping, and pattern creation. Export List saves its text report to the configured Homestead or Guild Hall folder according to the current XML type. The window can also be reopened by clicking the addon icon in the game menu bar twice to turn the addon windows off and back on without changing the active tool state.");
     }
 }
 

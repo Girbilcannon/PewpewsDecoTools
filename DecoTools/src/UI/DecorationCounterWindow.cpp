@@ -7,6 +7,7 @@
 #include "../Core/AppSettings.h"
 #include "../Core/DecorationDatabase.h"
 #include "../Core/Gw2Api.h"
+#include "../Core/Utf8Paths.h"
 #include "../imgui/imgui.h"
 
 #include <algorithm>
@@ -18,11 +19,6 @@
 #include <iomanip>
 #include <set>
 #include <sstream>
-
-namespace AppRuntime
-{
-    const std::string& GetAddonDirectory();
-}
 
 namespace
 {
@@ -181,9 +177,28 @@ namespace
 
     void ExportList()
     {
-        const std::filesystem::path folder(AppRuntime::GetAddonDirectory());
+        const AppSettings::Data& settings=AppSettings::Get();
+        const std::string configuredFolder=decorationType==1
+            ? settings.guildHallFolder.data()
+            : settings.homesteadFolder.data();
+        if (configuredFolder.empty())
+        {
+            status=decorationType==1
+                ? "Set the Guild Hall XML folder in Settings before exporting."
+                : "Set the Homestead XML folder in Settings before exporting.";
+            return;
+        }
+
+        const std::filesystem::path folder=Utf8Paths::FromUtf8(configuredFolder);
         std::error_code error;
         std::filesystem::create_directories(folder, error);
+        if (error)
+        {
+            status=decorationType==1
+                ? "The configured Guild Hall folder could not be created or opened."
+                : "The configured Homestead folder could not be created or opened.";
+            return;
+        }
         const std::string stem = SafeStem(context) + "_DecoCount";
         std::filesystem::path output = folder / (stem + ".txt");
         for (int index = 2; std::filesystem::exists(output, error); ++index)
@@ -227,7 +242,8 @@ namespace
             else file << std::setw(9) << "N/A";
             file << "\n";
         }
-        status = "Exported " + output.filename().string() + ".";
+        status = "Exported " + output.filename().string() + " to the configured " +
+            (decorationType==1 ? "Guild Hall" : "Homestead") + " folder.";
     }
 }
 
