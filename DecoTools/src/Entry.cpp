@@ -77,7 +77,7 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef()
     addonDefinition.Version.Major = 1;
     addonDefinition.Version.Minor = 3;
     addonDefinition.Version.Build = 2;
-    addonDefinition.Version.Revision = 4;
+    addonDefinition.Version.Revision = 5;
 
     addonDefinition.Author = "Girbilcannon.8259";
     addonDefinition.Description =
@@ -153,7 +153,7 @@ namespace
         nexusApi->Log(
             LOGL_INFO,
             AddonName,
-            "Pewpew's Deco Tools 1.3.2.4 loaded."
+            "Pewpew's Deco Tools 1.3.2.5 loaded."
         );
     }
 

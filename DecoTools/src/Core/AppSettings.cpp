@@ -340,7 +340,7 @@ void AppSettings::SaveNow()
 
     file << std::setprecision(9);
     file << "{\n";
-    file << "  \"version\": \"1.3.2.4\",\n";
+    file << "  \"version\": \"1.3.2.5\",\n";
     file << "  \"apiKey\": \"" << JsonEscape(settings.apiKey.data()) << "\",\n";
     file << "  \"homesteadFolder\": \"" << JsonEscape(settings.homesteadFolder.data()) << "\",\n";
     file << "  \"guildHallFolder\": \"" << JsonEscape(settings.guildHallFolder.data()) << "\",\n";

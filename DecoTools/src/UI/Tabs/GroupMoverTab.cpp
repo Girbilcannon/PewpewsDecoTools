@@ -141,6 +141,9 @@ namespace
     float dragStartAnchor[3] = { 0.0f, 0.0f, 0.0f };
     ImVec2 activeAxisDirection(0.0f, 0.0f);
     float activeDecoUnitsPerPixel = 0.0f;
+    float activeWorldUnitsPerPixel = 0.0f;
+    Vec3 dragViewRight;
+    Vec3 dragViewUp;
     int manipulatorMode = 0;
     float groupRotationDegrees[3] = { 0.0f, 0.0f, 0.0f };
     Mat3 accumulatedGroupRotation =
@@ -498,6 +501,27 @@ namespace
             screen.x <= viewport.x + 4000.0f &&
             screen.y >= -4000.0f &&
             screen.y <= viewport.y + 4000.0f;
+    }
+
+    float WorldSizeForScreenPixels(
+        const Camera& camera,
+        ImVec2 viewport,
+        Vec3 world,
+        float pixels
+    )
+    {
+        if (viewport.y <= 1.0f)
+        {
+            return 0.0f;
+        }
+
+        const float depth = (std::max)(
+            NearClip,
+            Dot(Subtract(world, camera.position), camera.forward)
+        );
+        const float focalY =
+            (viewport.y * 0.5f) / std::tan(camera.fovRadians * 0.5f);
+        return depth * pixels / focalY;
     }
 
     const MapInfo* FindMapInfo(unsigned mapId)
@@ -1959,7 +1983,6 @@ namespace
             return;
         }
 
-        const float distanceToCamera = Length(Subtract(originWorld, camera.position));
         ImVec2 mouse = inputCaptured || activeAxis != 0
             ? wndMousePosition
             : ImGui::GetIO().MousePos;
@@ -1981,7 +2004,7 @@ namespace
         if (manipulatorMode == 0)
         {
             const float axisWorldLength =
-                (std::max)(1.5f, distanceToCamera * 0.035f);
+                WorldSizeForScreenPixels(camera, viewport, originWorld, 52.0f);
             const Vec3 worldAxes[3] =
             {
                 { axisWorldLength, 0.0f, 0.0f },
@@ -2000,25 +2023,40 @@ namespace
                 );
             }
 
+            constexpr float centerHalfSize = 7.0f;
+            constexpr float centerHitHalfSize = 12.0f;
+            const bool centerHovered =
+                mouse.x >= originScreen.x - centerHitHalfSize &&
+                mouse.x <= originScreen.x + centerHitHalfSize &&
+                mouse.y >= originScreen.y - centerHitHalfSize &&
+                mouse.y <= originScreen.y + centerHitHalfSize;
+
             float bestDistance = 38.0f;
             if (activeAxis == 0 &&
                 !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow))
             {
-                for (int index = 0; index < 3; ++index)
+                if (centerHovered)
                 {
-                    if (!axisVisible[index])
+                    hoveredAxis = 4;
+                }
+                else
+                {
+                    for (int index = 0; index < 3; ++index)
                     {
-                        continue;
-                    }
-                    const float distance = DistanceToSegment(
-                        mouse,
-                        originScreen,
-                        axisScreen[index]
-                    );
-                    if (distance < bestDistance)
-                    {
-                        bestDistance = distance;
-                        hoveredAxis = index + 1;
+                        if (!axisVisible[index])
+                        {
+                            continue;
+                        }
+                        const float distance = DistanceToSegment(
+                            mouse,
+                            originScreen,
+                            axisScreen[index]
+                        );
+                        if (distance < bestDistance)
+                        {
+                            bestDistance = distance;
+                            hoveredAxis = index + 1;
+                        }
                     }
                 }
             }
@@ -2040,13 +2078,30 @@ namespace
                 );
             }
 
-            draw->AddCircleFilled(
-                originScreen,
-                5.0f,
+            const bool centerSelected =
+                hoveredAxis == 4 || activeAxis == 4;
+            const ImU32 centerColor = centerSelected
+                ? highlight
+                : ImGui::ColorConvertFloat4ToU32(
+                    ImVec4(0.55f, 0.55f, 0.55f, 1.0f));
+            draw->AddRectFilled(
+                ImVec2(originScreen.x - centerHalfSize,
+                    originScreen.y - centerHalfSize),
+                ImVec2(originScreen.x + centerHalfSize,
+                    originScreen.y + centerHalfSize),
+                centerColor,
+                1.5f
+            );
+            draw->AddRect(
+                ImVec2(originScreen.x - centerHalfSize,
+                    originScreen.y - centerHalfSize),
+                ImVec2(originScreen.x + centerHalfSize,
+                    originScreen.y + centerHalfSize),
                 ImGui::ColorConvertFloat4ToU32(
-                    ImVec4(1.0f, 1.0f, 1.0f, 0.95f)
-                ),
-                12
+                    ImVec4(0.85f, 0.85f, 0.85f, 1.0f)),
+                1.5f,
+                0,
+                centerSelected ? 2.0f : 1.0f
             );
 
             if (clicked && activeAxis == 0 && hoveredAxis != 0)
@@ -2059,21 +2114,35 @@ namespace
                 dragStartAnchor[1] = anchorPosition[1];
                 dragStartAnchor[2] = anchorPosition[2];
 
-                const ImVec2 end = axisScreen[activeAxis - 1];
-                const float x = end.x - originScreen.x;
-                const float y = end.y - originScreen.y;
-                const float screenLength = std::sqrt(x * x + y * y);
-                if (screenLength > 1.0f)
+                if (activeAxis == 4)
                 {
-                    activeAxisDirection = ImVec2(
-                        x / screenLength,
-                        y / screenLength
+                    activeWorldUnitsPerPixel = WorldSizeForScreenPixels(
+                        camera,
+                        viewport,
+                        originWorld,
+                        1.0f
                     );
-                    activeDecoUnitsPerPixel =
-                        axisWorldLength / screenLength / DecorationScale;
-                    if (activeAxis == 3)
+                    dragViewRight = camera.right;
+                    dragViewUp = camera.up;
+                }
+                else
+                {
+                    const ImVec2 end = axisScreen[activeAxis - 1];
+                    const float x = end.x - originScreen.x;
+                    const float y = end.y - originScreen.y;
+                    const float screenLength = std::sqrt(x * x + y * y);
+                    if (screenLength > 1.0f)
                     {
-                        activeDecoUnitsPerPixel = -activeDecoUnitsPerPixel;
+                        activeAxisDirection = ImVec2(
+                            x / screenLength,
+                            y / screenLength
+                        );
+                        activeDecoUnitsPerPixel =
+                            axisWorldLength / screenLength / DecorationScale;
+                        if (activeAxis == 3)
+                        {
+                            activeDecoUnitsPerPixel = -activeDecoUnitsPerPixel;
+                        }
                     }
                 }
             }
@@ -2082,18 +2151,37 @@ namespace
             {
                 const float mouseX = mouse.x - dragStartMouse.x;
                 const float mouseY = mouse.y - dragStartMouse.y;
-                const float pixels =
-                    mouseX * activeAxisDirection.x +
-                    mouseY * activeAxisDirection.y;
-
                 float target[3] =
                 {
                     dragStartAnchor[0],
                     dragStartAnchor[1],
                     dragStartAnchor[2]
                 };
-                target[activeAxis - 1] +=
-                    pixels * activeDecoUnitsPerPixel;
+                if (activeAxis == 4)
+                {
+                    const Vec3 startWorld = DecorationToWorld(
+                        DVec3{ target[0], target[1], target[2] }
+                    );
+                    const Vec3 worldDelta = Add(
+                        Multiply(dragViewRight,
+                            mouseX * activeWorldUnitsPerPixel),
+                        Multiply(dragViewUp,
+                            -mouseY * activeWorldUnitsPerPixel)
+                    );
+                    const DVec3 targetDecoration =
+                        WorldToDecoration(Add(startWorld, worldDelta));
+                    target[0] = static_cast<float>(targetDecoration.x);
+                    target[1] = static_cast<float>(targetDecoration.y);
+                    target[2] = static_cast<float>(targetDecoration.z);
+                }
+                else
+                {
+                    const float pixels =
+                        mouseX * activeAxisDirection.x +
+                        mouseY * activeAxisDirection.y;
+                    target[activeAxis - 1] +=
+                        pixels * activeDecoUnitsPerPixel;
+                }
                 MoveAnchorTo(target);
                 status =
                     "Moved the decoration group with the scene manipulator.";
@@ -2102,7 +2190,7 @@ namespace
         else
         {
             const float ringWorldRadius =
-                (std::max)(1.0f, distanceToCamera * 0.025f);
+                WorldSizeForScreenPixels(camera, viewport, originWorld, 38.0f);
             const double ringDecorationRadius =
                 static_cast<double>(ringWorldRadius / DecorationScale);
 
@@ -2474,6 +2562,7 @@ void GroupMoverTab::ClearImportedData()
     pointRightClickCaptured = false;
     hoveredPointGroup = -1;
     activeDecoUnitsPerPixel = 0.0f;
+    activeWorldUnitsPerPixel = 0.0f;
     manipulatorMode = 0;
     groupRotationDegrees[0] = 0.0f;
     groupRotationDegrees[1] = 0.0f;

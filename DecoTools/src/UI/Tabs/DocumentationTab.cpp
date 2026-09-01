@@ -146,9 +146,9 @@ namespace
         RenderStep(3, "Refresh - Select - Import",
             "Refresh the list to show your new save, choose the file from the dropdown, and press Import Selected to load it into the tool.");
         RenderStep(4, "Move",
-            "The Move operation lets you reposition the layout in world X, Y, and Z with the manipulator handles. The red, green, and blue handles are placed at the average center of all decorations and at their lowest point, which is usually ground level and easier to locate. If you are unsure where the manipulator is, move your character anywhere on the map and click Move to Character to bring every decoration point to your location.");
+            "The Move operation lets you reposition the layout in world X, Y, and Z with the manipulator handles. Drag a colored axis handle to move along only that axis, or drag the gray center box to move freely across the current camera view. The handles retain a consistent on-screen size as the camera moves closer or farther away. The manipulator is placed at the average center of all decorations and at their lowest point, which is usually ground level and easier to locate. If you are unsure where the manipulator is, move your character anywhere on the map and click Move to Character to bring every decoration point to your location.");
         RenderStep(5, "Rotate",
-            "The Rotate operation uses advanced group-rotation math while providing three simple rings that rotate the layout around whichever local axis you choose.");
+            "The Rotate operation uses advanced group-rotation math while providing three simple rings that rotate the layout around whichever local axis you choose. The rings retain a consistent on-screen size as the camera moves closer or farther away.");
         RenderStep(6, "Export",
             "When the position is complete, click Export Updated XML. The file is saved to the default location and can be loaded in-game to view the result. Files exported from this tool use the suffix _MOVED#.xml, with the number automatically indexed for each new save.");
 
@@ -346,7 +346,7 @@ namespace
         RenderBullet("Remember addon window state",
             "Remembers the addon's window state and tool options between sessions.");
         RenderBullet("Show decoration count window",
-            "Shows or hides the Decoration Counter, which is especially useful for merging, map swapping, and pattern creation. Export List saves its text report to the configured Homestead or Guild Hall folder according to the current XML type. The window can also be reopened by clicking the addon icon in the game menu bar twice to turn the addon windows off and back on without changing the active tool state.");
+            "Shows or hides the Decoration Counter, which is especially useful for merging, map swapping, and pattern creation. The window can also be reopened by clicking the addon icon in the game menu bar twice to turn the addon windows off and back on without changing the active tool state.");
     }
 }
 
