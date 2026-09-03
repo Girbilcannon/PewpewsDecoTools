@@ -1478,7 +1478,7 @@ namespace
         file << "  \"Version\": 2,\n";
         file << "  \"GeneratedAtUtc\": \""
             << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ") << "\",\n";
-        file << "  \"GeneratedBy\": \"Pewpew's Deco Tools 1.3.3.7\",\n";
+        file << "  \"GeneratedBy\": \"Pewpew's Deco Tools 1.3.3.4\",\n";
         file << "  \"SourceSnapshot\": {\n";
         file << "    \"GuildUpgradeIds\": [";
         size_t written = 0;

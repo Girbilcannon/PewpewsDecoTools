@@ -36,12 +36,27 @@
     <Image Include="src\Resources\tray.png">
       <Filter>Resource Files</Filter>
     </Image>
-    <Image Include="src\Resources\nav_move.png"><Filter>Resource Files</Filter></Image>
-    <Image Include="src\Resources\nav_patterns.png"><Filter>Resource Files</Filter></Image>
-    <Image Include="src\Resources\nav_map_swap.png"><Filter>Resource Files</Filter></Image>
-    <Image Include="src\Resources\nav_group_tools.png"><Filter>Resource Files</Filter></Image>
-    <Image Include="src\Resources\nav_documentation.png"><Filter>Resource Files</Filter></Image>
-    <Image Include="src\Resources\nav_settings.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_move.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\Resources\nav_patterns.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\Resources\nav_map_swap.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\Resources\nav_group_tools.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\Resources\nav_group_backup.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\Resources\nav_documentation.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\Resources\nav_settings.png">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\DecoTools.rc">
@@ -59,6 +74,9 @@
       <Filter>Source Files\Core</Filter>
     </ClCompile>
     <ClCompile Include="src\Core\Gw2Api.cpp">
+      <Filter>Source Files\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Core\GroupBackupDatabase.cpp">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
     <ClCompile Include="src\Entry.cpp">
@@ -91,6 +109,9 @@
     <ClCompile Include="src\UI\Tabs\GroupMoverTab.cpp">
       <Filter>Source Files\UI\Tabs</Filter>
     </ClCompile>
+    <ClCompile Include="src\UI\Tabs\GroupBackupRestoreTab.cpp">
+      <Filter>Source Files\UI\Tabs</Filter>
+    </ClCompile>
     <ClCompile Include="src\UI\Tabs\MoveToolTab.cpp">
       <Filter>Source Files\UI\Tabs</Filter>
     </ClCompile>
@@ -121,6 +142,9 @@
       <Filter>Header Files\Core</Filter>
     </ClInclude>
     <ClInclude Include="src\Core\Gw2Api.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Core\GroupBackupDatabase.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
     <ClInclude Include="src\Core\Utf8Paths.h">
@@ -156,6 +180,9 @@
     <ClInclude Include="src\UI\MainWindow.h">
       <Filter>Header Files\UI</Filter>
     </ClInclude>
+    <ClInclude Include="src\UI\ManipulatorUtils.h">
+      <Filter>Header Files\UI</Filter>
+    </ClInclude>
     <ClInclude Include="src\UI\DecorationCounterWindow.h">
       <Filter>Header Files\UI</Filter>
     </ClInclude>
@@ -169,6 +196,9 @@
       <Filter>Header Files\UI\Tabs</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\Tabs\GroupMoverTab.h">
+      <Filter>Header Files\UI\Tabs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\Tabs\GroupBackupRestoreTab.h">
       <Filter>Header Files\UI\Tabs</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\Tabs\MoveToolTab.h">

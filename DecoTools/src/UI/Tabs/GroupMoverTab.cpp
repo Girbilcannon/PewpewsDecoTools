@@ -7,9 +7,11 @@
 #include "../../Core/AppRuntime.h"
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
+#include "../../Core/GroupBackupDatabase.h"
 #include "../../Core/Utf8Paths.h"
 #include "../../Core/XmlFileUtils.h"
 #include "../DecorationCounterWindow.h"
+#include "../ManipulatorUtils.h"
 #include "../XmlComboHelpers.h"
 #include "../../imgui/imgui.h"
 #include "../../imgui/imgui_internal.h"
@@ -510,18 +512,9 @@ namespace
         float pixels
     )
     {
-        if (viewport.y <= 1.0f)
-        {
-            return 0.0f;
-        }
-
-        const float depth = (std::max)(
-            NearClip,
-            Dot(Subtract(world, camera.position), camera.forward)
-        );
-        const float focalY =
-            (viewport.y * 0.5f) / std::tan(camera.fovRadians * 0.5f);
-        return depth * pixels / focalY;
+        return ManipulatorUtils::WorldSizeForScreenPixels(
+            Dot(Subtract(world, camera.position), camera.forward),
+            NearClip, viewport.y, camera.fovRadians, pixels);
     }
 
     const MapInfo* FindMapInfo(unsigned mapId)
@@ -1254,6 +1247,19 @@ namespace
 
     bool ImportXml(const std::string& path, bool preserveTransformHistory = false)
     {
+        const GroupBackupDatabase::ImportResult groupRestore =
+            GroupBackupDatabase::PrepareImport(
+            path,
+            -1,
+            AppSettings::Get().automaticGroupBackupRestore,
+            AppSettings::Get().backupUngroupedXmls
+        );
+        if (groupRestore.action == GroupBackupDatabase::ImportAction::NeedsUserChoice ||
+            groupRestore.action == GroupBackupDatabase::ImportAction::Error)
+        {
+            status = groupRestore.message;
+            return false;
+        }
         std::ifstream file(Utf8Paths::FromUtf8(path), std::ios::binary);
         if (!file.is_open())
         {
@@ -1564,6 +1570,19 @@ namespace
             std::filesystem::remove(temporary, cleanupError);
             status = "Could not replace the source XML. The original was left unchanged.";
             return;
+        }
+
+        if (AppSettings::Get().automaticGroupBackupRestore)
+        {
+            std::string backupStatus;
+            GroupBackupDatabase::RecordFile(
+                importedPath,
+                xmlType,
+                GroupBackupDatabase::RestorePointType::Auto,
+                std::string(),
+                backupStatus,
+                AppSettings::Get().backupUngroupedXmls
+            );
         }
 
         if (!ImportXml(importedPath, true))
@@ -2004,7 +2023,8 @@ namespace
         if (manipulatorMode == 0)
         {
             const float axisWorldLength =
-                WorldSizeForScreenPixels(camera, viewport, originWorld, 52.0f);
+                WorldSizeForScreenPixels(camera, viewport, originWorld,
+                    ManipulatorUtils::MoveAxisPixels);
             const Vec3 worldAxes[3] =
             {
                 { axisWorldLength, 0.0f, 0.0f },
@@ -2023,8 +2043,8 @@ namespace
                 );
             }
 
-            constexpr float centerHalfSize = 7.0f;
-            constexpr float centerHitHalfSize = 12.0f;
+            constexpr float centerHalfSize = ManipulatorUtils::CenterHalfSize;
+            constexpr float centerHitHalfSize = ManipulatorUtils::CenterHitHalfSize;
             const bool centerHovered =
                 mouse.x >= originScreen.x - centerHitHalfSize &&
                 mouse.x <= originScreen.x + centerHitHalfSize &&
@@ -2190,7 +2210,8 @@ namespace
         else
         {
             const float ringWorldRadius =
-                WorldSizeForScreenPixels(camera, viewport, originWorld, 38.0f);
+                WorldSizeForScreenPixels(camera, viewport, originWorld,
+                    ManipulatorUtils::RotationRingPixels);
             const double ringDecorationRadius =
                 static_cast<double>(ringWorldRadius / DecorationScale);
 

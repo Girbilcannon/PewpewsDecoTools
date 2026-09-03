@@ -7,9 +7,11 @@
 #include "../../Core/AppRuntime.h"
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
+#include "../../Core/GroupBackupDatabase.h"
 #include "../../Core/Utf8Paths.h"
 #include "../../Core/XmlFileUtils.h"
 #include "../DecorationCounterWindow.h"
+#include "../ManipulatorUtils.h"
 #include "../XmlComboHelpers.h"
 #include "../../imgui/imgui.h"
 #include "../../imgui/imgui_internal.h"
@@ -160,6 +162,9 @@ namespace
     ImVec2 dragStartMouse(0.0f, 0.0f);
     ImVec2 activeAxisDirection(0.0f, 0.0f);
     float activeDecoUnitsPerPixel = 0.0f;
+    float activeWorldUnitsPerPixel = 0.0f;
+    Vec3 dragViewRight;
+    Vec3 dragViewUp;
     DVec3 dragStartTranslation;
     float dragStartLineStep[3] = {};
     float dragStartSquareSpacing[2] = {};
@@ -239,6 +244,10 @@ namespace
         return { static_cast<float>(d.x*DecorationScale),
             static_cast<float>(-d.z*DecorationScale),
             static_cast<float>(d.y*DecorationScale) };
+    }
+    DVec3 WorldToDecoration(Vec3 world)
+    {
+        return { world.x/DecorationScale,world.z/DecorationScale,-world.y/DecorationScale };
     }
 
     Mat3 IdentityMatrix()
@@ -356,6 +365,13 @@ namespace
         screen.y=viewport.y*0.5f-y*focal/z;
         return screen.x>=-4000 && screen.x<=viewport.x+4000 &&
             screen.y>=-4000 && screen.y<=viewport.y+4000;
+    }
+    float WorldSizeForScreenPixels(const Camera& camera,ImVec2 viewport,
+        Vec3 world,float pixels)
+    {
+        return ManipulatorUtils::WorldSizeForScreenPixels(
+            Dot(Subtract(world,camera.position),camera.forward),
+            NearClip,viewport.y,camera.fovRadians,pixels);
     }
 
     void RenderSectionHeading(const char* label)
@@ -869,6 +885,13 @@ namespace
 
     bool ImportXml(const std::string& path)
     {
+        const GroupBackupDatabase::ImportResult groupRestore=
+            GroupBackupDatabase::PrepareImport(
+                path,-1,AppSettings::Get().automaticGroupBackupRestore,
+                AppSettings::Get().backupUngroupedXmls);
+        if (groupRestore.action==GroupBackupDatabase::ImportAction::NeedsUserChoice ||
+            groupRestore.action==GroupBackupDatabase::ImportAction::Error)
+        { status=groupRestore.message; return false; }
         std::ifstream file(Utf8Paths::FromUtf8(path),std::ios::binary);
         if (!file.is_open()) { status="Could not open the selected XML file."; return false; }
         std::ostringstream contents; contents<<file.rdbuf(); std::string source=contents.str();
@@ -1099,6 +1122,14 @@ namespace
         if (!file.is_open()) { status="Could not open the imported XML for writing."; return; }
         file.write(output.data(),static_cast<std::streamsize>(output.size()));
         if (!file.good()) { status="The pattern could not be written completely."; return; }
+        file.close();
+        if (AppSettings::Get().automaticGroupBackupRestore)
+        {
+            std::string backupStatus;
+            GroupBackupDatabase::RecordFile(importedPath,xmlType,
+                GroupBackupDatabase::RestorePointType::Auto,std::string(),backupStatus,
+                AppSettings::Get().backupUngroupedXmls);
+        }
         groupApplyWritten=true;
         status="Applied the pattern to group \""+
             groups[static_cast<size_t>(selectedGroupIndex)].name+
@@ -1121,6 +1152,14 @@ namespace
         if (!file.is_open()) { status="Could not create the pattern XML file."; return; }
         file.write(output.data(),static_cast<std::streamsize>(output.size()));
         if (!file.good()) { status="The pattern XML could not be written completely."; return; }
+        file.close();
+        if (AppSettings::Get().automaticGroupBackupRestore)
+        {
+            std::string backupStatus;
+            GroupBackupDatabase::RecordFile(Utf8Paths::ToUtf8(outputPath),xmlType,
+                GroupBackupDatabase::RestorePointType::Auto,std::string(),backupStatus,
+                AppSettings::Get().backupUngroupedXmls);
+        }
         if (selectedFolderType==xmlType) RefreshXmlList();
         status="Exported "+Utf8Paths::ToUtf8(outputPath.filename())+" with "+
             std::to_string(generatedProps.size())+" decorations.";
@@ -1164,8 +1203,8 @@ namespace
         TranslationGeometry geometry;
         const Vec3 originWorld=DecorationToWorld(origin);
         if (!camera.Project(originWorld,viewport,geometry.origin)) return geometry;
-        const float distance=Length(Subtract(originWorld,camera.position));
-        geometry.worldLength=(std::max)(1.5f,distance*0.035f);
+        geometry.worldLength=WorldSizeForScreenPixels(camera,viewport,originWorld,
+            ManipulatorUtils::MoveAxisPixels);
         const double decoLength=geometry.worldLength/DecorationScale;
         for (int axis=0;axis<3;++axis)
         {
@@ -1262,6 +1301,49 @@ namespace
         status="Adjusted pattern spacing with the gray manipulator.";
     }
 
+    void ApplyOffsetViewDrag(DVec3 localDelta)
+    {
+        if (patternType==PatternType::Line)
+        {
+            lineStep[0]=dragStartLineStep[0]+static_cast<float>(localDelta.x);
+            lineStep[1]=dragStartLineStep[1]+static_cast<float>(localDelta.y);
+            lineStep[2]=dragStartLineStep[2]+static_cast<float>(localDelta.z);
+        }
+        else if (patternType==PatternType::Circle)
+        {
+            DVec3 radial={1.0,0.0,0.0};
+            if (referenceInstance>=0)
+            {
+                radial=instances[static_cast<size_t>(referenceInstance)].offset;
+                radial.z=0.0;
+                const double length=std::sqrt(radial.x*radial.x+radial.y*radial.y);
+                if (length>0.000001)
+                { radial.x/=length; radial.y/=length; }
+                else radial={1.0,0.0,0.0};
+            }
+            const double radiusDelta=localDelta.x*radial.x+localDelta.y*radial.y;
+            circleRadius=(std::max)(1.0f,
+                dragStartCircleRadius+static_cast<float>(radiusDelta));
+            circleVerticalStep=dragStartCircleVertical+
+                static_cast<float>(localDelta.z)*static_cast<float>((std::max)(1,circleCount-1));
+        }
+        else if (patternType==PatternType::Square)
+        {
+            squareSpacing[0]=dragStartSquareSpacing[0]+static_cast<float>(localDelta.x);
+            squareSpacing[1]=dragStartSquareSpacing[1]+static_cast<float>(localDelta.y);
+            if (squareOrigin!=SquareOrigin::Center)
+                squareVerticalOffset=dragStartSquareVertical+static_cast<float>(localDelta.z);
+        }
+        else
+        {
+            cubeSpacing[0]=dragStartCubeSpacing[0]+static_cast<float>(localDelta.x);
+            cubeSpacing[1]=dragStartCubeSpacing[1]+static_cast<float>(localDelta.y);
+            cubeSpacing[2]=dragStartCubeSpacing[2]+static_cast<float>(localDelta.z);
+        }
+        RebuildPatternPreservingMain();
+        status="Adjusted pattern spacing with the gray multidirectional handle.";
+    }
+
     void DrawManipulators(const Camera& camera,ImVec2 viewport,ImDrawList* draw)
     {
         const ImVec2 mouse=inputCaptured || activeControl!=0 ? wndMousePosition : ImGui::GetIO().MousePos;
@@ -1283,7 +1365,12 @@ namespace
         if (operationMode==0)
         {
             primaryTranslation=BuildTranslationGeometry(camera,viewport,mainCenter,IdentityMatrix(),7);
-            if (canHover)
+            if (canHover && std::fabs(mouse.x-primaryTranslation.origin.x)<=
+                ManipulatorUtils::CenterHitHalfSize &&
+                std::fabs(mouse.y-primaryTranslation.origin.y)<=
+                ManipulatorUtils::CenterHitHalfSize)
+            { hoveredControl=1; hoveredAxisLocal=4; best=0.0f; }
+            else if (canHover)
                 for (int axis=0;axis<3;++axis) if (primaryTranslation.visible[axis])
                 {
                     const float distance=DistanceToSegment(mouse,primaryTranslation.origin,primaryTranslation.ends[axis]);
@@ -1294,7 +1381,13 @@ namespace
         if (operationMode!=2 && instances.size()>1)
         {
             offsetTranslation=BuildTranslationGeometry(camera,viewport,offsetHandleCenter,offsetBasis,offsetMask);
-            if (canHover)
+            const float centerDistanceX=std::fabs(mouse.x-offsetTranslation.origin.x);
+            const float centerDistanceY=std::fabs(mouse.y-offsetTranslation.origin.y);
+            if (canHover && centerDistanceX<=ManipulatorUtils::CenterHitHalfSize &&
+                centerDistanceY<=ManipulatorUtils::CenterHitHalfSize &&
+                centerDistanceX+centerDistanceY<best)
+            { hoveredControl=2; hoveredAxisLocal=4; best=centerDistanceX+centerDistanceY; }
+            else if (canHover && best>0.0f)
                 for (int axis=0;axis<3;++axis) if (offsetTranslation.visible[axis])
                 {
                     const float distance=DistanceToSegment(mouse,offsetTranslation.origin,offsetTranslation.ends[axis]);
@@ -1326,7 +1419,8 @@ namespace
         if (ringControl!=0)
         {
             const Vec3 originWorld=DecorationToWorld(ringOrigin);
-            ringRadius=(std::max)(1.0f,Length(Subtract(originWorld,camera.position))*0.025f)/DecorationScale;
+            ringRadius=WorldSizeForScreenPixels(camera,viewport,originWorld,
+                ManipulatorUtils::RotationRingPixels)/DecorationScale;
             if (canHover)
                 for (int axis=0;axis<3;++axis)
                 {
@@ -1336,6 +1430,7 @@ namespace
         }
 
         if (operationMode==0)
+        {
             for (int axis=0;axis<3;++axis) if (primaryTranslation.visible[axis])
             {
                 const bool selected=(hoveredControl==1 && hoveredAxisLocal==axis+1) ||
@@ -1343,6 +1438,19 @@ namespace
                 DrawArrow(draw,primaryTranslation.origin,primaryTranslation.ends[axis],
                     selected ? highlight : axisColors[axis],selected ? 5.0f : 3.0f);
             }
+            const bool centerSelected=(hoveredControl==1 && hoveredAxisLocal==4) ||
+                (activeControl==1 && activeAxis==4);
+            const ImU32 centerColor=centerSelected ? highlight : IM_COL32(140,140,140,255);
+            draw->AddRectFilled({primaryTranslation.origin.x-ManipulatorUtils::CenterHalfSize,
+                primaryTranslation.origin.y-ManipulatorUtils::CenterHalfSize},
+                {primaryTranslation.origin.x+ManipulatorUtils::CenterHalfSize,
+                    primaryTranslation.origin.y+ManipulatorUtils::CenterHalfSize},centerColor,1.5f);
+            draw->AddRect({primaryTranslation.origin.x-ManipulatorUtils::CenterHalfSize,
+                primaryTranslation.origin.y-ManipulatorUtils::CenterHalfSize},
+                {primaryTranslation.origin.x+ManipulatorUtils::CenterHalfSize,
+                    primaryTranslation.origin.y+ManipulatorUtils::CenterHalfSize},
+                IM_COL32(216,216,216,255),1.5f,0,centerSelected ? 2.0f : 1.0f);
+        }
         if (operationMode!=2 && instances.size()>1)
         {
             for (int axis=0;axis<3;++axis) if (offsetTranslation.visible[axis])
@@ -1352,6 +1460,18 @@ namespace
                 DrawArrow(draw,offsetTranslation.origin,offsetTranslation.ends[axis],
                     selected ? highlight : gray,selected ? 5.0f : 3.0f);
             }
+            const bool centerSelected=(hoveredControl==2 && hoveredAxisLocal==4) ||
+                (activeControl==2 && activeAxis==4);
+            const ImU32 centerColor=centerSelected ? highlight : IM_COL32(140,140,140,255);
+            draw->AddRectFilled({offsetTranslation.origin.x-ManipulatorUtils::CenterHalfSize,
+                offsetTranslation.origin.y-ManipulatorUtils::CenterHalfSize},
+                {offsetTranslation.origin.x+ManipulatorUtils::CenterHalfSize,
+                    offsetTranslation.origin.y+ManipulatorUtils::CenterHalfSize},centerColor,1.5f);
+            draw->AddRect({offsetTranslation.origin.x-ManipulatorUtils::CenterHalfSize,
+                offsetTranslation.origin.y-ManipulatorUtils::CenterHalfSize},
+                {offsetTranslation.origin.x+ManipulatorUtils::CenterHalfSize,
+                    offsetTranslation.origin.y+ManipulatorUtils::CenterHalfSize},
+                IM_COL32(216,216,216,255),1.5f,0,centerSelected ? 2.0f : 1.0f);
             if (centerHeightTranslation.visible[2])
             {
                 const bool selected=hoveredControl==5 || activeControl==5;
@@ -1386,14 +1506,24 @@ namespace
             else if (activeControl==5) geometry=&centerHeightTranslation;
             if (geometry!=nullptr)
             {
-                const ImVec2 end=geometry->ends[activeAxis-1];
-                const float x=end.x-geometry->origin.x,y=end.y-geometry->origin.y;
-                const float screenLength=std::sqrt(x*x+y*y);
-                if (screenLength>1.0f)
+                if (activeAxis==4)
                 {
-                    activeAxisDirection={x/screenLength,y/screenLength};
-                    activeDecoUnitsPerPixel=geometry->worldLength/screenLength/DecorationScale;
-                    if (activeAxis==3) activeDecoUnitsPerPixel=-activeDecoUnitsPerPixel;
+                    const DVec3 activeOrigin=activeControl==1 ? mainCenter : offsetHandleCenter;
+                    activeWorldUnitsPerPixel=WorldSizeForScreenPixels(camera,viewport,
+                        DecorationToWorld(activeOrigin),1.0f);
+                    dragViewRight=camera.right; dragViewUp=camera.up;
+                }
+                else
+                {
+                    const ImVec2 end=geometry->ends[activeAxis-1];
+                    const float x=end.x-geometry->origin.x,y=end.y-geometry->origin.y;
+                    const float screenLength=std::sqrt(x*x+y*y);
+                    if (screenLength>1.0f)
+                    {
+                        activeAxisDirection={x/screenLength,y/screenLength};
+                        activeDecoUnitsPerPixel=geometry->worldLength/screenLength/DecorationScale;
+                        if (activeAxis==3) activeDecoUnitsPerPixel=-activeDecoUnitsPerPixel;
+                    }
                 }
             }
         }
@@ -1403,17 +1533,37 @@ namespace
             const float mouseX=mouse.x-dragStartMouse.x,mouseY=mouse.y-dragStartMouse.y;
             if (activeControl<=2 || activeControl==5)
             {
-                const float pixels=mouseX*activeAxisDirection.x+mouseY*activeAxisDirection.y;
-                const float delta=pixels*activeDecoUnitsPerPixel;
-                if (activeControl==1)
+                if (activeAxis==4)
                 {
-                    translation=dragStartTranslation;
-                    if (activeAxis==1) translation.x+=delta;
-                    else if (activeAxis==2) translation.y+=delta;
-                    else translation.z+=delta;
-                    RebuildPattern(false); status="Moved the complete pattern.";
+                    const Vec3 worldDelta=Add(
+                        Multiply(dragViewRight,mouseX*activeWorldUnitsPerPixel),
+                        Multiply(dragViewUp,-mouseY*activeWorldUnitsPerPixel));
+                    const DVec3 decorationDelta=WorldToDecoration(worldDelta);
+                    if (activeControl==1)
+                    {
+                        translation=Add(dragStartTranslation,decorationDelta);
+                        RebuildPattern(false); status="Moved the complete pattern.";
+                    }
+                    else
+                    {
+                        const DVec3 localDelta=Multiply(Transpose(wholePatternRotation),decorationDelta);
+                        ApplyOffsetViewDrag(localDelta);
+                    }
                 }
-                else ApplyOffsetDrag(delta);
+                else
+                {
+                    const float pixels=mouseX*activeAxisDirection.x+mouseY*activeAxisDirection.y;
+                    const float delta=pixels*activeDecoUnitsPerPixel;
+                    if (activeControl==1)
+                    {
+                        translation=dragStartTranslation;
+                        if (activeAxis==1) translation.x+=delta;
+                        else if (activeAxis==2) translation.y+=delta;
+                        else translation.z+=delta;
+                        RebuildPattern(false); status="Moved the complete pattern.";
+                    }
+                    else ApplyOffsetDrag(delta);
+                }
             }
             else
             {
@@ -1786,6 +1936,7 @@ void PatternsTab::ClearImportedData()
     objectRotationDegrees[0]=objectRotationDegrees[1]=objectRotationDegrees[2]=0;
     patternRotationDegrees[0]=patternRotationDegrees[1]=patternRotationDegrees[2]=0;
     hoveredControl=activeControl=activeAxis=0; inputCaptured=mouseDown=clickPending=false;
+    activeDecoUnitsPerPixel=0.0f; activeWorldUnitsPerPixel=0.0f;
     hoveredPointGroup=-1; pointClickPending=pointRightClickPending=pointRightClickCaptured=false;
     groupApplyWritten=false;
     ClearPatternHistory();

@@ -7,6 +7,7 @@
 #include "../../Core/AppRuntime.h"
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
+#include "../../Core/GroupBackupDatabase.h"
 #include "../../Core/Utf8Paths.h"
 #include "../../Core/XmlFileUtils.h"
 #include "../../imgui/imgui.h"
@@ -401,6 +402,16 @@ namespace
 
     bool LoadXml(const std::string& path, XmlDocument& document, std::string& error)
     {
+        const GroupBackupDatabase::ImportResult groupRestore =
+            GroupBackupDatabase::PrepareImport(
+                path,-1,AppSettings::Get().automaticGroupBackupRestore,
+                AppSettings::Get().backupUngroupedXmls);
+        if (groupRestore.action == GroupBackupDatabase::ImportAction::NeedsUserChoice ||
+            groupRestore.action == GroupBackupDatabase::ImportAction::Error)
+        {
+            error = groupRestore.message;
+            return false;
+        }
         const std::filesystem::path nativePath = Utf8Paths::FromUtf8(path);
         std::ifstream file(nativePath, std::ios::binary);
         if (!file.is_open())
@@ -810,6 +821,13 @@ namespace
         std::string error;
         if (WriteFile(output, merged, error))
         {
+            if (AppSettings::Get().automaticGroupBackupRestore)
+            {
+                std::string backupStatus;
+                GroupBackupDatabase::RecordFile(Utf8Paths::ToUtf8(output),base.type,
+                    GroupBackupDatabase::RestorePointType::Auto,std::string(),backupStatus,
+                    AppSettings::Get().backupUngroupedXmls);
+            }
             status = "Exported " + Utf8Paths::ToUtf8(output.filename()) + ".";
         }
         else
@@ -945,6 +963,14 @@ namespace
             return;
         }
 
+        if (AppSettings::Get().automaticGroupBackupRestore)
+        {
+            std::string backupStatus;
+            GroupBackupDatabase::RecordFile(path,groupDocument.type,
+                GroupBackupDatabase::RestorePointType::Auto,std::string(),backupStatus,
+                AppSettings::Get().backupUngroupedXmls);
+        }
+
         if (!ReloadGroupDocument(path)) return;
         status = "Created group \"" + name + "\" with " +
             std::to_string(selectedCount) + " decorations.";
@@ -977,6 +1003,13 @@ namespace
             ReloadGroupDocument(path);
             status = error;
             return;
+        }
+        if (AppSettings::Get().automaticGroupBackupRestore)
+        {
+            std::string backupStatus;
+            GroupBackupDatabase::RecordFile(path,groupDocument.type,
+                GroupBackupDatabase::RestorePointType::Auto,std::string(),backupStatus,
+                AppSettings::Get().backupUngroupedXmls);
         }
         if (!ReloadGroupDocument(path)) return;
         status = "Ungrouped \"" + name + "\" (" +
@@ -1073,6 +1106,13 @@ namespace
             status = error;
             return;
         }
+        if (AppSettings::Get().automaticGroupBackupRestore)
+        {
+            std::string backupStatus;
+            GroupBackupDatabase::RecordFile(Utf8Paths::ToUtf8(strippedPath),extractDocument.type,
+                GroupBackupDatabase::RestorePointType::Auto,std::string(),backupStatus,
+                AppSettings::Get().backupUngroupedXmls);
+        }
 
         int exported = 0;
         for (const Group* group : selected)
@@ -1095,6 +1135,13 @@ namespace
             {
                 status = error;
                 return;
+            }
+            if (AppSettings::Get().automaticGroupBackupRestore)
+            {
+                std::string backupStatus;
+                GroupBackupDatabase::RecordFile(Utf8Paths::ToUtf8(output),extractDocument.type,
+                    GroupBackupDatabase::RestorePointType::Auto,std::string(),backupStatus,
+                    AppSettings::Get().backupUngroupedXmls);
             }
             ++exported;
         }

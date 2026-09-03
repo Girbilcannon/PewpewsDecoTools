@@ -9,6 +9,7 @@
 #include "../imgui/imgui.h"
 #include "DecorationCounterWindow.h"
 #include "Tabs/DocumentationTab.h"
+#include "Tabs/GroupBackupRestoreTab.h"
 #include "Tabs/MapSwapTab.h"
 #include "Tabs/MergeExtractTab.h"
 #include "Tabs/MoveToolTab.h"
@@ -24,6 +25,7 @@ namespace
         Patterns,
         MapSwap,
         MergeExtract,
+        GroupBackupRestore,
         Documentation,
         Settings
     };
@@ -52,6 +54,10 @@ namespace
         else if (activeTab == ActiveTab::MergeExtract)
         {
             MergeExtractTab::ClearImportedData();
+        }
+        else if (activeTab == ActiveTab::GroupBackupRestore)
+        {
+            GroupBackupRestoreTab::ClearImportedData();
         }
 
         activeTab = next;
@@ -129,21 +135,24 @@ void MainWindow::Render()
             { ActiveTab::Patterns, "Patterns", "Patterns", "DECOTOOLS_NAV_PATTERNS" },
             { ActiveTab::MapSwap, "Map Swap", "MapSwap", "DECOTOOLS_NAV_MAP_SWAP" }
         };
+        const NavigationItem groupBackupRestoreItem =
+            { ActiveTab::GroupBackupRestore, "Group Backup/Restore", "GroupBackupRestore", "DECOTOOLS_NAV_GROUP_BACKUP" };
         const NavigationItem settingsItem =
             { ActiveTab::Settings, "Settings", "Settings", "DECOTOOLS_NAV_SETTINGS" };
         const NavigationItem documentationItem =
             { ActiveTab::Documentation, "Documentation", "Documentation", "DECOTOOLS_NAV_DOCUMENTATION" };
 
-        ImGui::BeginChild("##DecoToolsNavigation", ImVec2(170.0f, 0.0f), true);
+        ImGui::BeginChild("##DecoToolsNavigation", ImVec2(190.0f, 0.0f), true);
         ImGui::TextDisabled("TOOLS");
         ImGui::Separator();
         for (const NavigationItem& item : tools)
         {
             if (DrawNavigationItem(item)) ActivateTab(item.tab);
         }
-        const float footerY = ImGui::GetWindowHeight() - 96.0f;
+        const float footerY = ImGui::GetWindowHeight() - 129.0f;
         if (ImGui::GetCursorPosY() < footerY) ImGui::SetCursorPosY(footerY);
         ImGui::Separator();
+        if (DrawNavigationItem(groupBackupRestoreItem)) ActivateTab(groupBackupRestoreItem.tab);
         if (DrawNavigationItem(documentationItem)) ActivateTab(documentationItem.tab);
         if (DrawNavigationItem(settingsItem)) ActivateTab(settingsItem.tab);
         ImGui::EndChild();
@@ -154,12 +163,16 @@ void MainWindow::Render()
         else if (activeTab == ActiveTab::Patterns) PatternsTab::Render();
         else if (activeTab == ActiveTab::MapSwap) MapSwapTab::Render();
         else if (activeTab == ActiveTab::MergeExtract) MergeExtractTab::Render();
+        else if (activeTab == ActiveTab::GroupBackupRestore) GroupBackupRestoreTab::Render();
         else if (activeTab == ActiveTab::Documentation) DocumentationTab::Render();
         else if (activeTab == ActiveTab::Settings) SettingsTab::Render();
         ImGui::EndChild();
+        GroupBackupRestoreTab::RenderAutoRestorePopup();
     }
 
     ImGui::End();
+    GroupBackupRestoreTab::RenderManageBackupsWindow();
+    GroupBackupRestoreTab::RenderRebuildXmlWindow();
 
     if (settings.rememberWindowState && settings.windowVisible != wasVisible)
     {

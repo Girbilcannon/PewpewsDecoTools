@@ -14,6 +14,7 @@ namespace
         Patterns,
         MapSwap,
         GroupTools,
+        GroupBackupRestore,
         GroupMover,
         Settings
     };
@@ -32,6 +33,7 @@ namespace
         { DocumentationPage::Patterns, "Patterns" },
         { DocumentationPage::MapSwap, "Map Swap" },
         { DocumentationPage::GroupTools, "Group Tools" },
+        { DocumentationPage::GroupBackupRestore, "Group Backup/Restore" },
         { DocumentationPage::GroupMover, "Group Mover" },
         { DocumentationPage::Settings, "Settings" }
     };
@@ -199,14 +201,14 @@ namespace
 
         RenderStep(4, "Select your move operation", "");
         RenderBullet("Move",
-            "Provides a colored three-axis manipulator on the main object. Moving it repositions the entire pattern.", 18.0f);
+            "Provides a colored three-axis manipulator on the main object. Drag a colored arrow for a single axis or the gray center box to move freely across the camera view. Moving it repositions the entire pattern, and the handle remains a consistent on-screen size at any camera distance.", 18.0f);
         RenderBullet("Rotate",
             "Provides colored three-axis rotation rings on the main object. Rotating it causes every copy to rotate by the same amount in place.", 18.0f);
         RenderBullet("Pattern Rotate",
-            "Provides three-axis rotation rings at the center of the complete pattern and rotates the arrangement as one unit.", 18.0f);
+            "Provides three-axis rotation rings at the center of the complete pattern and rotates the arrangement as one unit. Object Rotate and Pattern Rotate rings retain a consistent on-screen size as the camera moves.", 18.0f);
 
         RenderStep(5, "Control spacing and offsets",
-            "Each pattern type provides a second gray manipulator for changing spacing and offsets. Line uses a total XYZ offset to its outer endpoint, while Circle uses radius and the total vertical difference between its first and last instances. These adjustments preserve the colored source handle's current position, including after Pattern Rotate. The gray offset manipulator is not available during the Pattern Rotate operation.");
+            "Each pattern type provides a second gray manipulator for changing spacing and offsets. Its gray center box can adjust multiple supported directions together relative to the camera view, while its arrows remain single-axis controls. Line uses a total XYZ offset to its outer endpoint, while Circle uses radius and the total vertical difference between its first and last instances. These adjustments preserve the colored source handle's current position, including after Pattern Rotate. The gray offset manipulator is not available during the Pattern Rotate operation.");
         RenderStep(6, "Export or Apply",
             "Full XML exports a new file using the automatically indexed _PATTERN#.xml suffix. XML Groups uses Apply to XML instead: the original instance remains in its existing group, and every generated replica becomes a separate adjacent group named Original Group (Copy 1), Original Group (Copy 2), and so on. Existing copy names are skipped automatically. Every other group and every ungrouped decoration remains untouched.");
         RenderStep(7, "Undo and Redo",
@@ -319,6 +321,63 @@ namespace
         );
     }
 
+    void RenderGroupBackupRestorePage()
+    {
+        RenderPageTitle("Group Backup/Restore");
+        RenderParagraph(
+            "Group Backup/Restore protects named XML groups from being lost when Guild Wars 2 or another operation rewrites the decoration list without its group comments. Automatic restore points are stored locally, while the manual tools remain available even when automation is disabled."
+        );
+
+        RenderSectionHeading("Automatic Backup and Restore");
+        RenderBullet("Automatic backup",
+            "When enabled in Settings, importing an XML containing named groups immediately records a complete restore point. Every successful Apply or Export that produces grouped XML also records one. These backups always include both grouped and ungrouped decorations. Repeated imports of the same unchanged file are deduplicated. The most recent 20 automatic restore points are retained for each XML lineage; manual and safety restore points are never removed by that limit.");
+        RenderBullet("Backup Ungrouped XMLs",
+            "This separate option is disabled by default and applies only to automatic backups. When enabled, imports and successful outputs containing decorations but no named groups also receive complete-XML rebuild backups. The first import of a new groupless filename receives a lightweight confirmation asking whether it should be treated as new. Zero-group backups are available in Rebuild XML but are excluded from Restore Groups because they contain no group membership.");
+        RenderBullet("Automatic restore",
+            "When an XML without groups is imported, the addon first checks the complete filename and then its normalized lineage. Known suffixes such as _MOVED#, _MERGED#, _STRIPPED#, _PATTERN#, and map-swap names are removed while finding the related build.");
+        RenderBullet("Conservative matching",
+            "Decorations are matched using normalized prop attributes. Attribute order, whitespace, equivalent numeric formatting, and the tiny transform precision changes introduced by an in-game XML save do not matter. A decoration that was genuinely moved, rotated, modified, or deleted is excluded from its old group and remains ungrouped above the restored group sections. Payload data remains part of the match, and duplicate identical props are assigned only once.");
+        RenderNote(
+            "A confident related backup restores silently. If a related grouped history exists but cannot be matched safely, Deco Tools first asks whether this is a new file. Choose Import as New to continue without restoring, or Restore Groups Now to open the full candidate list. New groupless files import silently when Backup Ungrouped XMLs is disabled."
+        );
+
+        RenderSectionHeading("Manual Backup");
+        RenderStep(1, "Import a grouped XML",
+            "Choose Homestead or Guild Hall, refresh the list, select the XML, and click Import Selected.");
+        RenderStep(2, "Add an optional name",
+            "A custom name makes important milestones easier to identify. If left blank, the restore point uses the XML filename.");
+        RenderStep(3, "Create the backup",
+            "Create Manual Backup always stores the complete XML, including every grouped and ungrouped decoration, its map metadata, and complete prop payloads. Manual backups also support XMLs containing no named groups, regardless of the Backup Ungrouped XMLs setting.");
+
+        RenderSectionHeading("Manual Restore");
+        RenderStep(1, "Import the target XML",
+            "The target is the file whose groups should be rebuilt. Homestead restore points cannot be applied to Guild Hall XMLs, or the reverse.");
+        RenderStep(2, "Choose a restore source",
+            "Use the category dropdown to show All Restore Options, Saved XMLs, Automatic Backups, Manual Backups, or Safety Backups. Choose the specific source from the visible scrollable list below it. Saved XMLs containing groups are read from the configured folder and listed newest first. Database restore points show their custom name or XML filename, persistent type, timestamp, and group count.");
+        RenderStep(3, "Review the preview",
+            "Matched shows decorations that can return to a group. Missing/Modified shows backed-up decorations that no longer match. Ungrouped shows current decorations that will remain outside restored groups.");
+        RenderStep(4, "Restore",
+            "Restore Selected Groups rewrites the target atomically and keeps a blank line between group sections. If the target already contains groups, a persistent Safety point is recorded first. If that safety backup cannot be saved, the restore is canceled; a failed XML write also leaves the original untouched.");
+
+        RenderSectionHeading("Manage Backups");
+        RenderParagraph(
+            "Manage Backups opens a separate window for stored Manual and Safety restore points. Filter the list, select one or several entries, rename one selected backup, or delete multiple selected backups after confirmation. Renaming a Safety backup does not change its type. These controls never rename or delete saved XML files."
+        );
+
+        RenderSectionHeading("Emergency XML Recovery");
+        RenderParagraph(
+            "Rebuild XML creates a new decoration XML directly from an Automatic, Manual, or Safety database backup. Choose the restore point, enter a new filename, and press Rebuild. The .xml extension is added automatically when omitted, and an existing file is never overwritten."
+        );
+        RenderNote(
+            "Backups created by version 1.3.3.4 and later retain the Decorations root metadata, all ungrouped props, every group, and each prop's complete raw XML payload. This preserves special decorations such as grave markers. Older database backups can rebuild grouped decorations only. For those older backups, load into the intended Homestead or Guild Hall first so current Mumble map data can supply the required mapId, mapName, and type header."
+        );
+
+        RenderSectionHeading("Local Storage");
+        RenderParagraph(
+            "Restore points are stored in group_backups.db inside the addon's DecoTools data folder beside its other databases. Automatic, Manual, and Safety are separate persistent types. Older Pre-Restore Safety entries are migrated automatically. Database updates use a temporary file and a recovery .bak copy so an interrupted save cannot silently replace the last valid database."
+        );
+    }
+
     void RenderSettingsPage()
     {
         RenderPageTitle("Settings");
@@ -347,6 +406,10 @@ namespace
             "Remembers the addon's window state and tool options between sessions.");
         RenderBullet("Show decoration count window",
             "Shows or hides the Decoration Counter, which is especially useful for merging, map swapping, and pattern creation. The window can also be reopened by clicking the addon icon in the game menu bar twice to turn the addon windows off and back on without changing the active tool state.");
+        RenderBullet("Automatically backup and restore XML groups",
+            "Enabled by default. Grouped imports and successful grouped Apply and Export operations create automatic restore points, while ungrouped imports attempt to recover lost group comments. Turning it off disables both automatic actions but never removes the Group Backup/Restore page or its manual tools.");
+        RenderBullet("Backup Ungrouped XMLs",
+            "Disabled by default. When enabled, the automatic backup system also creates complete rebuild points for XMLs containing decorations but no named groups. It does not control manual or safety backups, and grouped backups always retain their ungrouped decorations.");
     }
 }
 
@@ -388,6 +451,7 @@ void DocumentationTab::Render()
     else if (currentPage == DocumentationPage::Patterns) RenderPatternsPage();
     else if (currentPage == DocumentationPage::MapSwap) RenderMapSwapPage();
     else if (currentPage == DocumentationPage::GroupTools) RenderGroupToolsPage();
+    else if (currentPage == DocumentationPage::GroupBackupRestore) RenderGroupBackupRestorePage();
     else if (currentPage == DocumentationPage::GroupMover) RenderGroupMoverPage();
     else if (currentPage == DocumentationPage::Settings) RenderSettingsPage();
     ImGui::EndChild();

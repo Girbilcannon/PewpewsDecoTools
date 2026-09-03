@@ -6,6 +6,7 @@
 
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
+#include "../../Core/GroupBackupDatabase.h"
 #include "../../Core/Gw2Api.h"
 #include "../../Core/Utf8Paths.h"
 #include "../../Core/XmlFileUtils.h"
@@ -468,6 +469,16 @@ namespace
 
     bool ImportXml(const std::string& path)
     {
+        const GroupBackupDatabase::ImportResult groupRestore =
+            GroupBackupDatabase::PrepareImport(
+                path,-1,AppSettings::Get().automaticGroupBackupRestore,
+                AppSettings::Get().backupUngroupedXmls);
+        if (groupRestore.action == GroupBackupDatabase::ImportAction::NeedsUserChoice ||
+            groupRestore.action == GroupBackupDatabase::ImportAction::Error)
+        {
+            status = groupRestore.message;
+            return false;
+        }
         std::ifstream file(Utf8Paths::FromUtf8(path), std::ios::binary);
         if (!file.is_open())
         {
@@ -1101,6 +1112,20 @@ namespace
         {
             status = "The swapped XML could not be written completely.";
             return;
+        }
+        file.close();
+
+        if (AppSettings::Get().automaticGroupBackupRestore)
+        {
+            std::string backupStatus;
+            GroupBackupDatabase::RecordFile(
+                Utf8Paths::ToUtf8(outputPath),
+                destination.type,
+                GroupBackupDatabase::RestorePointType::Auto,
+                std::string(),
+                backupStatus,
+                AppSettings::Get().backupUngroupedXmls
+            );
         }
 
         std::ostringstream addition;

@@ -158,6 +158,7 @@
     <Image Include="src\Resources\nav_patterns.png" />
     <Image Include="src\Resources\nav_map_swap.png" />
     <Image Include="src\Resources\nav_group_tools.png" />
+    <Image Include="src\Resources\nav_group_backup.png" />
     <Image Include="src\Resources\nav_documentation.png" />
     <Image Include="src\Resources\nav_settings.png" />
   </ItemGroup>
@@ -169,6 +170,7 @@
     <ClCompile Include="src\Core\AppSettings.cpp" />
     <ClCompile Include="src\Core\DecorationDatabase.cpp" />
     <ClCompile Include="src\Core\Gw2Api.cpp" />
+    <ClCompile Include="src\Core\GroupBackupDatabase.cpp" />
     <ClCompile Include="src\Core\HelperApi.cpp" />
     <ClCompile Include="src\Entry.cpp" />
     <ClCompile Include="src\imgui\imgui.cpp" />
@@ -181,6 +183,7 @@
     <ClCompile Include="src\UI\Tabs\MapSwapTab.cpp" />
     <ClCompile Include="src\UI\Tabs\MergeExtractTab.cpp" />
     <ClCompile Include="src\UI\Tabs\GroupMoverTab.cpp" />
+    <ClCompile Include="src\UI\Tabs\GroupBackupRestoreTab.cpp" />
     <ClCompile Include="src\UI\Tabs\MoveToolTab.cpp" />
     <ClCompile Include="src\UI\Tabs\PatternsTab.cpp" />
     <ClCompile Include="src\UI\Tabs\SettingsTab.cpp" />
@@ -192,6 +195,7 @@
     <ClInclude Include="src\Core\AppSettings.h" />
     <ClInclude Include="src\Core\DecorationDatabase.h" />
     <ClInclude Include="src\Core\Gw2Api.h" />
+    <ClInclude Include="src\Core\GroupBackupDatabase.h" />
     <ClInclude Include="src\Core\Utf8Paths.h" />
     <ClInclude Include="src\Core\XmlFileUtils.h" />
     <ClInclude Include="src\imgui\imconfig.h" />
@@ -203,12 +207,14 @@
     <ClInclude Include="src\mumble\Mumble.h" />
     <ClInclude Include="src\nexus\Nexus.h" />
     <ClInclude Include="src\UI\MainWindow.h" />
+    <ClInclude Include="src\UI\ManipulatorUtils.h" />
     <ClInclude Include="src\UI\DecorationCounterWindow.h" />
     <ClInclude Include="src\UI\XmlComboHelpers.h" />
     <ClInclude Include="src\UI\Tabs\DocumentationTab.h" />
     <ClInclude Include="src\UI\Tabs\MapSwapTab.h" />
     <ClInclude Include="src\UI\Tabs\MergeExtractTab.h" />
     <ClInclude Include="src\UI\Tabs\GroupMoverTab.h" />
+    <ClInclude Include="src\UI\Tabs\GroupBackupRestoreTab.h" />
     <ClInclude Include="src\UI\Tabs\MoveToolTab.h" />
     <ClInclude Include="src\UI\Tabs\PatternsTab.h" />
     <ClInclude Include="src\UI\Tabs\SettingsTab.h" />

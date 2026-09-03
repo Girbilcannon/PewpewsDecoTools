@@ -272,11 +272,6 @@ namespace
             "automaticGroupBackupRestore",
             settings.automaticGroupBackupRestore
         );
-        settings.backupUngroupedXmls = FindBool(
-            json,
-            "backupUngroupedXmls",
-            settings.backupUngroupedXmls
-        );
 
         settings.showBoundingBox =
             FindBool(json, "showBoundingBox", settings.showBoundingBox);
@@ -350,7 +345,7 @@ void AppSettings::SaveNow()
 
     file << std::setprecision(9);
     file << "{\n";
-    file << "  \"version\": \"1.3.3.7\",\n";
+    file << "  \"version\": \"1.3.3.4\",\n";
     file << "  \"apiKey\": \"" << JsonEscape(settings.apiKey.data()) << "\",\n";
     file << "  \"homesteadFolder\": \"" << JsonEscape(settings.homesteadFolder.data()) << "\",\n";
     file << "  \"guildHallFolder\": \"" << JsonEscape(settings.guildHallFolder.data()) << "\",\n";
@@ -366,8 +361,6 @@ void AppSettings::SaveNow()
         << (settings.showDecorationCounter ? "true" : "false") << ",\n";
     file << "  \"automaticGroupBackupRestore\": "
         << (settings.automaticGroupBackupRestore ? "true" : "false") << ",\n";
-    file << "  \"backupUngroupedXmls\": "
-        << (settings.backupUngroupedXmls ? "true" : "false") << ",\n";
     file << "  \"showBoundingBox\": "
         << (settings.showBoundingBox ? "true" : "false") << ",\n";
     file << "  \"showSolidFaces\": "

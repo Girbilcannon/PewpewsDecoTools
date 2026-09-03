@@ -19,6 +19,8 @@ namespace AppSettings
         bool rememberWindowState = true;
         bool windowVisible = true;
         bool showDecorationCounter = true;
+        bool automaticGroupBackupRestore = true;
+        bool backupUngroupedXmls = false;
 
         bool showBoundingBox = false;
         bool showSolidFaces = false;

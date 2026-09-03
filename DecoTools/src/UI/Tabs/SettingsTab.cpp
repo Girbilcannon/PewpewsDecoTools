@@ -107,4 +107,34 @@ void SettingsTab::Render()
     {
         AppSettings::MarkDirty();
     }
+
+    if (ImGui::Checkbox(
+        "Automatically backup and restore XML groups",
+        &settings.automaticGroupBackupRestore
+    ))
+    {
+        AppSettings::MarkDirty();
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip(
+            "Creates restore points when grouped XMLs are imported or written, and attempts to restore groups when XMLs are imported."
+        );
+    }
+
+    ImGui::Indent();
+    if (ImGui::Checkbox(
+        "Backup Ungrouped XMLs",
+        &settings.backupUngroupedXmls
+    ))
+    {
+        AppSettings::MarkDirty();
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip(
+            "Automatically creates complete rebuild backups for XMLs without named groups. Grouped XML backups always include both grouped and ungrouped decorations."
+        );
+    }
+    ImGui::Unindent();
 }
