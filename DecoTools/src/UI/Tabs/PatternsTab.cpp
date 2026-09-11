@@ -145,11 +145,14 @@ namespace
     DVec3 patternWorldPivot;
     DVec3 offsetHandleCenter;
     DVec3 centerHeightHandleCenter;
+    DVec3 stepRotationHandleCenter;
     int referenceInstance = -1;
     Mat3 objectRotation = { { {1,0,0}, {0,1,0}, {0,0,1} } };
     Mat3 wholePatternRotation = { { {1,0,0}, {0,1,0}, {0,0,1} } };
+    Mat3 stepRotation = { { {1,0,0}, {0,1,0}, {0,0,1} } };
     float objectRotationDegrees[3] = { 0.0f, 0.0f, 0.0f };
     float patternRotationDegrees[3] = { 0.0f, 0.0f, 0.0f };
+    float stepRotationDegrees[3] = { 0.0f, 0.0f, 0.0f };
     int operationMode = 0;
 
     int hoveredControl = 0;
@@ -197,8 +200,10 @@ namespace
         DVec3 translation;
         Mat3 objectRotation;
         Mat3 wholePatternRotation;
+        Mat3 stepRotation;
         float objectRotationDegrees[3] = {};
         float patternRotationDegrees[3] = {};
+        float stepRotationDegrees[3] = {};
     };
 
     struct PatternHistoryEntry
@@ -647,10 +652,12 @@ namespace
         }
         patternWorldPivot=Add(unrotatedPatternPivot,translation);
         generatedProps.reserve(sourceProps.size()*instances.size());
+        Mat3 accumulatedStepRotation=IdentityMatrix();
         for (size_t instanceIndex=0;instanceIndex<instances.size();++instanceIndex)
         {
             const Instance& instance=instances[instanceIndex];
-            const Mat3 localRotation=Multiply(objectRotation,instance.patternFacing);
+            const Mat3 localRotation=Multiply(objectRotation,
+                Multiply(accumulatedStepRotation,instance.patternFacing));
             const DVec3 center=Add(sourcePivot,instance.offset);
             for (size_t sourceIndex=0;sourceIndex<sourceProps.size();++sourceIndex)
             {
@@ -667,6 +674,7 @@ namespace
                 generated.instanceIndex=instanceIndex;
                 generatedProps.push_back(generated);
             }
+            accumulatedStepRotation=Multiply(accumulatedStepRotation,stepRotation);
         }
         auto transformedCenter=[&](int index)
         {
@@ -675,6 +683,7 @@ namespace
         };
         mainCenter=transformedCenter(0);
         offsetHandleCenter=referenceInstance>=0 ? transformedCenter(referenceInstance) : mainCenter;
+        stepRotationHandleCenter=instances.size()>1 ? transformedCenter(1) : mainCenter;
         const double side=(std::max)(25.0,std::abs(static_cast<double>(squareSpacing[0]))*0.2);
         centerHeightHandleCenter=Add(
             mainCenter,
@@ -715,11 +724,13 @@ namespace
         std::copy(std::begin(cubeCount),std::end(cubeCount),std::begin(state.cubeCount));
         std::copy(std::begin(cubeSpacing),std::end(cubeSpacing),std::begin(state.cubeSpacing));
         state.translation=translation; state.objectRotation=objectRotation;
-        state.wholePatternRotation=wholePatternRotation;
+        state.wholePatternRotation=wholePatternRotation; state.stepRotation=stepRotation;
         std::copy(std::begin(objectRotationDegrees),std::end(objectRotationDegrees),
             std::begin(state.objectRotationDegrees));
         std::copy(std::begin(patternRotationDegrees),std::end(patternRotationDegrees),
             std::begin(state.patternRotationDegrees));
+        std::copy(std::begin(stepRotationDegrees),std::end(stepRotationDegrees),
+            std::begin(state.stepRotationDegrees));
         return state;
     }
 
@@ -738,10 +749,12 @@ namespace
             if (a.lineStep[i]!=b.lineStep[i] || a.cubeCount[i]!=b.cubeCount[i] ||
                 a.cubeSpacing[i]!=b.cubeSpacing[i] ||
                 a.objectRotationDegrees[i]!=b.objectRotationDegrees[i] ||
-                a.patternRotationDegrees[i]!=b.patternRotationDegrees[i]) return false;
+                a.patternRotationDegrees[i]!=b.patternRotationDegrees[i] ||
+                a.stepRotationDegrees[i]!=b.stepRotationDegrees[i]) return false;
             for (int row=0;row<3;++row)
                 if (a.objectRotation.m[row][i]!=b.objectRotation.m[row][i] ||
-                    a.wholePatternRotation.m[row][i]!=b.wholePatternRotation.m[row][i]) return false;
+                    a.wholePatternRotation.m[row][i]!=b.wholePatternRotation.m[row][i] ||
+                    a.stepRotation.m[row][i]!=b.stepRotation.m[row][i]) return false;
         }
         for (int i=0;i<2;++i) if (a.squareSpacing[i]!=b.squareSpacing[i]) return false;
         return a.translation.x==b.translation.x && a.translation.y==b.translation.y &&
@@ -763,11 +776,13 @@ namespace
         std::copy(std::begin(state.cubeCount),std::end(state.cubeCount),std::begin(cubeCount));
         std::copy(std::begin(state.cubeSpacing),std::end(state.cubeSpacing),std::begin(cubeSpacing));
         translation=state.translation; objectRotation=state.objectRotation;
-        wholePatternRotation=state.wholePatternRotation;
+        wholePatternRotation=state.wholePatternRotation; stepRotation=state.stepRotation;
         std::copy(std::begin(state.objectRotationDegrees),std::end(state.objectRotationDegrees),
             std::begin(objectRotationDegrees));
         std::copy(std::begin(state.patternRotationDegrees),std::end(state.patternRotationDegrees),
             std::begin(patternRotationDegrees));
+        std::copy(std::begin(state.stepRotationDegrees),std::end(state.stepRotationDegrees),
+            std::begin(stepRotationDegrees));
         RebuildPattern();
     }
 
@@ -818,8 +833,10 @@ namespace
     void ResetPatternTransform()
     {
         translation={}; objectRotation=IdentityMatrix(); wholePatternRotation=IdentityMatrix();
+        stepRotation=IdentityMatrix();
         objectRotationDegrees[0]=objectRotationDegrees[1]=objectRotationDegrees[2]=0.0f;
         patternRotationDegrees[0]=patternRotationDegrees[1]=patternRotationDegrees[2]=0.0f;
+        stepRotationDegrees[0]=stepRotationDegrees[1]=stepRotationDegrees[2]=0.0f;
         activeControl=activeAxis=hoveredControl=0; inputCaptured=false;
     }
 
@@ -1416,6 +1433,13 @@ namespace
         {
             ringOrigin=patternWorldPivot; ringBasis=wholePatternRotation; ringControl=4;
         }
+        else if (operationMode==3 && instances.size()>1)
+        {
+            ringOrigin=stepRotationHandleCenter;
+            ringBasis=Multiply(wholePatternRotation,
+                Multiply(objectRotation,Multiply(stepRotation,instances[1].patternFacing)));
+            ringControl=6;
+        }
         if (ringControl!=0)
         {
             const Vec3 originWorld=DecorationToWorld(ringOrigin);
@@ -1493,12 +1517,13 @@ namespace
         clickPending=false;
         if (clicked && activeControl==0 && hoveredControl!=0)
         {
-            BeginPatternHistory(hoveredControl==3 || hoveredControl==4
+            BeginPatternHistory(hoveredControl==3 || hoveredControl==4 || hoveredControl==6
                 ? "pattern rotation" : "pattern move");
             activeControl=hoveredControl; activeAxis=hoveredAxisLocal; inputCaptured=true;
             dragStartMouse=mouse; dragStartTranslation=translation; CaptureOffsetSnapshot();
             if (activeControl==3) dragStartRotation=objectRotation;
             else if (activeControl==4) dragStartRotation=wholePatternRotation;
+            else if (activeControl==6) dragStartRotation=stepRotation;
 
             const TranslationGeometry* geometry=nullptr;
             if (activeControl==1) geometry=&primaryTranslation;
@@ -1576,10 +1601,15 @@ namespace
                     objectRotation=updated; MatrixToDegrees(objectRotation,objectRotationDegrees);
                     status="Rotated every pattern instance in place.";
                 }
-                else
+                else if (activeControl==4)
                 {
                     wholePatternRotation=updated; MatrixToDegrees(wholePatternRotation,patternRotationDegrees);
                     status="Rotated the complete pattern around its center.";
+                }
+                else
+                {
+                    stepRotation=updated; MatrixToDegrees(stepRotation,stepRotationDegrees);
+                    status="Updated the cumulative rotation between pattern instances.";
                 }
                 RebuildPattern(false);
             }
@@ -1797,8 +1827,12 @@ void PatternsTab::Render()
     else if (patternType==PatternType::Circle)
     {
         patternChanged|=ImGui::SliderInt("Pattern Count",&circleCount,2,72);
-        ImGui::Text("Sweep"); ImGui::SetNextItemWidth(-1.0f);
+        ImGui::Text("Sweep");
+        ImGui::SetNextItemWidth(82.0f);
+        patternChanged|=ImGui::InputInt("##CircleSweepInput",&circleSweep,0,0);
+        ImGui::SameLine(); ImGui::SetNextItemWidth(-1.0f);
         patternChanged|=ImGui::SliderInt("##CircleSweep",&circleSweep,1,1080,"%d degrees");
+        circleSweep=(std::clamp)(circleSweep,1,1080);
         RenderSweepMarks();
         patternChanged|=ImGui::InputFloat("Radius",&circleRadius,1.0f,10.0f,"%.3f");
         circleRadius=(std::max)(1.0f,circleRadius);
@@ -1844,6 +1878,7 @@ void PatternsTab::Render()
     if (ImGui::RadioButton("Move",&operationMode,0)) { activeControl=0; inputCaptured=false; }
     ImGui::SameLine(); if (ImGui::RadioButton("Rotate",&operationMode,1)) { activeControl=0; inputCaptured=false; }
     ImGui::SameLine(); if (ImGui::RadioButton("Pattern Rotate",&operationMode,2)) { activeControl=0; inputCaptured=false; }
+    ImGui::SameLine(); if (ImGui::RadioButton("Step Rotation",&operationMode,3)) { activeControl=0; inputCaptured=false; }
 
     float position[3]={static_cast<float>(mainCenter.x),static_cast<float>(mainCenter.y),static_cast<float>(mainCenter.z)};
     ImGui::Text("Move"); ImGui::SameLine(); ImGui::SetNextItemWidth(360);
@@ -1873,6 +1908,14 @@ void PatternsTab::Render()
         uiChanged=true;
         wholePatternRotation=DegreesToMatrix(patternEdited); MatrixToDegrees(wholePatternRotation,patternRotationDegrees);
         RebuildPattern(false); status="Rotated the complete pattern around its center.";
+    }
+    ImGui::Text("Step Rotation"); ImGui::SameLine(); ImGui::SetNextItemWidth(320);
+    float stepEdited[3]={stepRotationDegrees[0],stepRotationDegrees[1],stepRotationDegrees[2]};
+    if (hasXml && ImGui::InputFloat3("##StepPatternRotation",stepEdited,"%.3f"))
+    {
+        uiChanged=true;
+        stepRotation=DegreesToMatrix(stepEdited); MatrixToDegrees(stepRotation,stepRotationDegrees);
+        RebuildPattern(false); status="Updated the cumulative rotation between pattern instances.";
     }
 
     if (sourceMode==SourceMode::XmlGroups && hasXml)
@@ -1932,9 +1975,10 @@ void PatternsTab::ClearImportedData()
     allSourceProps.clear(); sourceProps.clear(); groups.clear(); instances.clear(); generatedProps.clear();
     copyInsertStart=0; xmlType=-1; sourceMode=SourceMode::FullXml; selectedGroupIndex=-1;
     selectedXmlIndex=-1; status="No XML imported"; sourcePivot={}; translation={};
-    objectRotation=IdentityMatrix(); wholePatternRotation=IdentityMatrix();
+    objectRotation=IdentityMatrix(); wholePatternRotation=IdentityMatrix(); stepRotation=IdentityMatrix();
     objectRotationDegrees[0]=objectRotationDegrees[1]=objectRotationDegrees[2]=0;
     patternRotationDegrees[0]=patternRotationDegrees[1]=patternRotationDegrees[2]=0;
+    stepRotationDegrees[0]=stepRotationDegrees[1]=stepRotationDegrees[2]=0;
     hoveredControl=activeControl=activeAxis=0; inputCaptured=mouseDown=clickPending=false;
     activeDecoUnitsPerPixel=0.0f; activeWorldUnitsPerPixel=0.0f;
     hoveredPointGroup=-1; pointClickPending=pointRightClickPending=pointRightClickCaptured=false;

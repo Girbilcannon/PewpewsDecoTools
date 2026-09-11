@@ -189,7 +189,7 @@ namespace
         RenderBullet("Line",
             "Creates a straight line by repeating the imported decorations across a fixed Total Offset XYZ. Changing Copies redistributes the instances evenly without moving the outer endpoint. From Center creates the selected number of copies on both sides of the original while preserving both outer endpoints.", 18.0f);
         RenderBullet("Circle",
-            "Creates a circular pattern with 2 to 72 total instances. Sweep ranges continuously from 1 to 1080 degrees, with visual marks at 360, 720, and 1080 degrees for building as many as three revolutions. Pattern Count defaults to 6 and Sweep defaults to 360 degrees. Sweep and Total Vertical Offset define fixed first and last points, so changing Pattern Count only redistributes instances between them. A flat 360-degree circle remains a closed loop without an overlapping final copy.", 18.0f);
+            "Creates a circular pattern with 2 to 72 total instances. Sweep ranges continuously from 1 to 1080 degrees and can be entered precisely in the numeric field or adjusted with the adjacent slider. Visual marks at 360, 720, and 1080 degrees support builds covering as many as three revolutions. Pattern Count defaults to 6 and Sweep defaults to 360 degrees. Sweep and Total Vertical Offset define fixed first and last points, so changing Pattern Count only redistributes instances between them. A flat 360-degree circle remains a closed loop without an overlapping final copy.", 18.0f);
         RenderBullet("Square",
             "Creates a two-dimensional repeating grid with different vertical-offset styles for three-dimensional effects:", 18.0f);
         RenderBullet("Corner", "Builds a diagonal ramp from corner to corner.", 42.0f);
@@ -205,7 +205,9 @@ namespace
         RenderBullet("Rotate",
             "Provides colored three-axis rotation rings on the main object. Rotating it causes every copy to rotate by the same amount in place.", 18.0f);
         RenderBullet("Pattern Rotate",
-            "Provides three-axis rotation rings at the center of the complete pattern and rotates the arrangement as one unit. Object Rotate and Pattern Rotate rings retain a consistent on-screen size as the camera moves.", 18.0f);
+            "Provides three-axis rotation rings at the center of the complete pattern and rotates the arrangement as one unit. Object Rotate, Pattern Rotate, and Step Rotation rings retain a consistent on-screen size as the camera moves.", 18.0f);
+        RenderBullet("Step Rotation",
+            "Keeps the original source orientation unchanged, then cumulatively applies the entered X, Y, and Z rotation to each replica. A 30-degree Z step produces 30 degrees on Copy 1, 60 degrees on Copy 2, 90 degrees on Copy 3, and so on. Combined axes use the same full group-rotation math as the other rotation tools instead of multiplying Euler values directly.", 18.0f);
 
         RenderStep(5, "Control spacing and offsets",
             "Each pattern type provides a second gray manipulator for changing spacing and offsets. Its gray center box can adjust multiple supported directions together relative to the camera view, while its arrows remain single-axis controls. Line uses a total XYZ offset to its outer endpoint, while Circle uses radius and the total vertical difference between its first and last instances. These adjustments preserve the colored source handle's current position, including after Pattern Rotate. The gray offset manipulator is not available during the Pattern Rotate operation.");
@@ -278,6 +280,7 @@ namespace
         RenderSubStep(5, "After selecting the desired decorations, enter a group name and click Create Group.");
         RenderSubStep(6, "Grouped decoration points turn gray and the group is added to the list. Hide Grouped Decorations can hide those gray points, and the X beside a group name removes that group and returns its points to orange.");
         RenderSubStep(7, "There is no export button. The Group operation directly reorganizes the imported XML so its groups remain neatly stacked inside the same file.");
+        RenderSubStep(8, "Ungroup can remove every group, including the final remaining group. Its decorations return to their original prop-line order without comment headings.");
 
         ImGui::Dummy(ImVec2(0.0f, 8.0f));
         RenderBullet("Extract Operation", "");

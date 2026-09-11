@@ -400,17 +400,21 @@ namespace
         }
     }
 
-    bool LoadXml(const std::string& path, XmlDocument& document, std::string& error)
+    bool LoadXml(const std::string& path, XmlDocument& document, std::string& error,
+        bool prepareGroupRestore = true)
     {
-        const GroupBackupDatabase::ImportResult groupRestore =
-            GroupBackupDatabase::PrepareImport(
-                path,-1,AppSettings::Get().automaticGroupBackupRestore,
-                AppSettings::Get().backupUngroupedXmls);
-        if (groupRestore.action == GroupBackupDatabase::ImportAction::NeedsUserChoice ||
-            groupRestore.action == GroupBackupDatabase::ImportAction::Error)
+        if (prepareGroupRestore)
         {
-            error = groupRestore.message;
-            return false;
+            const GroupBackupDatabase::ImportResult groupRestore =
+                GroupBackupDatabase::PrepareImport(
+                    path,-1,AppSettings::Get().automaticGroupBackupRestore,
+                    AppSettings::Get().backupUngroupedXmls);
+            if (groupRestore.action == GroupBackupDatabase::ImportAction::NeedsUserChoice ||
+                groupRestore.action == GroupBackupDatabase::ImportAction::Error)
+            {
+                error = groupRestore.message;
+                return false;
+            }
         }
         const std::filesystem::path nativePath = Utf8Paths::FromUtf8(path);
         std::ifstream file(nativePath, std::ios::binary);
@@ -842,11 +846,11 @@ namespace
         if (clearName) groupName.fill('\0');
     }
 
-    bool ReloadGroupDocument(const std::string& path)
+    bool ReloadGroupDocument(const std::string& path, bool prepareGroupRestore)
     {
         XmlDocument reloaded;
         std::string error;
-        if (!LoadXml(path, reloaded, error))
+        if (!LoadXml(path, reloaded, error, prepareGroupRestore))
         {
             status = error;
             return false;
@@ -873,7 +877,7 @@ namespace
 
         const std::string path =
             availableXmlFiles[static_cast<size_t>(groupXmlIndex)].path;
-        if (!ReloadGroupDocument(path)) return;
+        if (!ReloadGroupDocument(path, true)) return;
         if (groupDocument.props.empty())
         {
             groupDocument = XmlDocument{};
@@ -971,7 +975,7 @@ namespace
                 AppSettings::Get().backupUngroupedXmls);
         }
 
-        if (!ReloadGroupDocument(path)) return;
+        if (!ReloadGroupDocument(path, false)) return;
         status = "Created group \"" + name + "\" with " +
             std::to_string(selectedCount) + " decorations.";
     }
@@ -1000,7 +1004,7 @@ namespace
         const std::string path = groupDocument.path;
         if (!ReplaceFileSafely(Utf8Paths::FromUtf8(path), rewritten, error))
         {
-            ReloadGroupDocument(path);
+            ReloadGroupDocument(path, false);
             status = error;
             return;
         }
@@ -1011,7 +1015,7 @@ namespace
                 GroupBackupDatabase::RestorePointType::Auto,std::string(),backupStatus,
                 AppSettings::Get().backupUngroupedXmls);
         }
-        if (!ReloadGroupDocument(path)) return;
+        if (!ReloadGroupDocument(path, false)) return;
         status = "Ungrouped \"" + name + "\" (" +
             std::to_string(count) + " decorations).";
     }
