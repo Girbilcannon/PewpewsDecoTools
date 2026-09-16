@@ -8,9 +8,12 @@
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
 #include "../../Core/GroupBackupDatabase.h"
+#include "../../Core/SharedXmlWorkspace.h"
 #include "../../Core/Utf8Paths.h"
 #include "../../Core/XmlFileUtils.h"
 #include "../DecorationCounterWindow.h"
+#include "../PrimaryActionButton.h"
+#include "../StatusBar.h"
 #include "../ManipulatorUtils.h"
 #include "../XmlComboHelpers.h"
 #include "../../imgui/imgui.h"
@@ -104,6 +107,7 @@ namespace
     std::string importedPath;
     std::string importedFileName;
     std::string status = "No XML imported";
+    float patternControlsHeight[4] = { 275.0f, 350.0f, 325.0f, 260.0f };
     std::vector<SourceProp> allSourceProps;
     std::vector<SourceProp> sourceProps;
     std::vector<GroupInfo> groups;
@@ -116,6 +120,7 @@ namespace
     int selectedXmlIndex = -1;
     bool fileListInitialized = false;
     bool listedSubFolders = false;
+    bool toolActive = false;
     SourceMode sourceMode = SourceMode::FullXml;
     int selectedGroupIndex = -1;
 
@@ -848,7 +853,7 @@ namespace
         sourcePivot=Multiply(sourcePivot,1.0/static_cast<double>(sourceProps.size()));
     }
 
-    bool ImportXml(const std::string& path);
+    bool ImportXml(const std::string& path, bool prepareGroupRestore = true);
     void SetSourceMode(SourceMode mode);
 
     void SelectGroup(int index)
@@ -900,15 +905,18 @@ namespace
                 : "XML Groups mode selected. Choose one group to pattern.";
     }
 
-    bool ImportXml(const std::string& path)
+    bool ImportXml(const std::string& path, bool prepareGroupRestore)
     {
-        const GroupBackupDatabase::ImportResult groupRestore=
-            GroupBackupDatabase::PrepareImport(
-                path,-1,AppSettings::Get().automaticGroupBackupRestore,
-                AppSettings::Get().backupUngroupedXmls);
-        if (groupRestore.action==GroupBackupDatabase::ImportAction::NeedsUserChoice ||
-            groupRestore.action==GroupBackupDatabase::ImportAction::Error)
-        { status=groupRestore.message; return false; }
+        if (prepareGroupRestore)
+        {
+            const GroupBackupDatabase::ImportResult groupRestore=
+                GroupBackupDatabase::PrepareImport(
+                    path,-1,AppSettings::Get().automaticGroupBackupRestore,
+                    AppSettings::Get().backupUngroupedXmls);
+            if (groupRestore.action==GroupBackupDatabase::ImportAction::NeedsUserChoice ||
+                groupRestore.action==GroupBackupDatabase::ImportAction::Error)
+            { status=groupRestore.message; return false; }
+        }
         std::ifstream file(Utf8Paths::FromUtf8(path),std::ios::binary);
         if (!file.is_open()) { status="Could not open the selected XML file."; return false; }
         std::ostringstream contents; contents<<file.rdbuf(); std::string source=contents.str();
@@ -1180,6 +1188,7 @@ namespace
         if (selectedFolderType==xmlType) RefreshXmlList();
         status="Exported "+Utf8Paths::ToUtf8(outputPath.filename())+" with "+
             std::to_string(generatedProps.size())+" decorations.";
+        SharedXmlWorkspace::AdoptGeneratedFile(Utf8Paths::ToUtf8(outputPath));
     }
 
     float DistanceToSegment(ImVec2 point,ImVec2 start,ImVec2 end)
@@ -1748,50 +1757,18 @@ void PatternsTab::Render()
     const bool hasXml=!sourceProps.empty();
     const PatternState frameBefore=CapturePatternState();
     bool uiChanged=false;
-    InitializeXmlList();
-    RenderSectionHeading("Import");
-    ImGui::Dummy({0,12}); ImGui::Text("Import Decoration XML");
-    if (ImGui::RadioButton("Homestead",&selectedFolderType,0)) RefreshXmlList();
-    ImGui::SameLine(); if (ImGui::RadioButton("Guild Hall",&selectedFolderType,1)) RefreshXmlList();
-    const bool hasSelection=selectedXmlIndex>=0 && selectedXmlIndex<static_cast<int>(availableXmlFiles.size());
-    const char* selectedName=hasSelection ? availableXmlFiles[static_cast<size_t>(selectedXmlIndex)].name.c_str() : "No XML files available";
-    ImGui::SetNextItemWidth(-1); XmlComboHelpers::SetPopupWidth(availableXmlFiles);
-    if (ImGui::BeginCombo("##PatternXmlList",selectedName))
-    {
-        for (size_t i=0;i<availableXmlFiles.size();++i)
-        {
-            const bool selected=selectedXmlIndex==static_cast<int>(i); ImGui::PushID(static_cast<int>(i));
-            if (ImGui::Selectable(availableXmlFiles[i].name.c_str(),selected)) selectedXmlIndex=static_cast<int>(i);
-            if (selected) ImGui::SetItemDefaultFocus(); ImGui::PopID();
-        }
-        ImGui::EndCombo();
-    }
-    const float actionWidth=(ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemSpacing.x)*0.5f;
-    if (ImGui::Button("Refresh List",{actionWidth,0})) RefreshXmlList(); ImGui::SameLine();
-    if (hasSelection)
-    {
-        if (ImGui::Button("Import Selected",{actionWidth,0}))
-            ImportXml(availableXmlFiles[static_cast<size_t>(selectedXmlIndex)].path);
-    }
-    else RenderDisabledButton("Import Selected",{actionWidth,0});
-    ImGui::TextDisabled("%s",status.c_str());
-
-    ImGui::Dummy({0,16}); RenderSectionHeading("Pattern Source");
-    int sourceValue=static_cast<int>(sourceMode);
-    bool sourceModeChanged=false;
-    if (ImGui::RadioButton("Full XML",&sourceValue,0)) sourceModeChanged=true;
-    ImGui::SameLine();
-    if (ImGui::RadioButton("XML Groups",&sourceValue,1)) sourceModeChanged=true;
-    if (sourceModeChanged && hasImported) SetSourceMode(static_cast<SourceMode>(sourceValue));
-    else if (!hasImported) sourceMode=static_cast<SourceMode>(sourceValue);
+    RenderSectionHeading("Pattern Source");
 
     if (sourceMode==SourceMode::XmlGroups && hasImported)
     {
-        ImGui::TextDisabled("Select one group here, or click any grouped point in the scene.");
+        ImGui::TextDisabled("Select one group here, or click any grouped point in the layout.");
         if (groups.empty()) ImGui::TextDisabled("This XML does not contain any named decoration groups.");
         else
         {
-            ImGui::BeginChild("##PatternGroupList",ImVec2(0.0f,170.0f),true);
+            const int patternIndex=(std::clamp)(static_cast<int>(patternType),0,3);
+            const float groupListHeight=(std::max)(100.0f,
+                ImGui::GetContentRegionAvail().y-patternControlsHeight[patternIndex]);
+            ImGui::BeginChild("##PatternGroupList",ImVec2(0.0f,groupListHeight),true);
             for (size_t index=0;index<groups.size();++index)
             {
                 const GroupInfo& group=groups[index];
@@ -1809,6 +1786,7 @@ void PatternsTab::Render()
         }
     }
 
+    const float controlsStartY=ImGui::GetCursorPosY();
     ImGui::Dummy({0,16}); RenderSectionHeading("Pattern Type");
     bool patternChanged=false;
     int typeValue=static_cast<int>(patternType);
@@ -1934,7 +1912,7 @@ void PatternsTab::Render()
     {
         if (hasXml)
         {
-            if (ImGui::Button("Export Pattern XML")) ExportPattern();
+            if (PrimaryActionButton::Draw("Export Pattern XML")) ExportPattern();
         }
         else RenderDisabledButton("Export Pattern XML");
     }
@@ -1950,13 +1928,33 @@ void PatternsTab::Render()
         else RenderDisabledButton("Redo##Pattern",{buttonWidth,0});
         ImGui::SameLine();
         if (hasXml)
-        { if (ImGui::Button("Apply to XML",{buttonWidth,0})) ApplyPatternToXml(); }
+        { if (PrimaryActionButton::Draw("Apply to XML",{buttonWidth,0})) ApplyPatternToXml(); }
         else RenderDisabledButton("Apply to XML",{buttonWidth,0});
     }
+    if (sourceMode==SourceMode::XmlGroups && hasImported && !groups.empty())
+    {
+        const int patternIndex=(std::clamp)(static_cast<int>(patternType),0,3);
+        const float measuredControlsHeight=ImGui::GetCursorPosY()-controlsStartY;
+        if (measuredControlsHeight>0.0f)
+            patternControlsHeight[patternIndex]=measuredControlsHeight;
+    }
+    StatusBar::PublishIfChanged(&status, status);
+}
+
+bool PatternsTab::ImportSharedPath(const std::string& path, bool hasGroups)
+{
+    ClearImportedData();
+    if (!ImportXml(path, false)) return false;
+    SetSourceMode(hasGroups ? SourceMode::XmlGroups : SourceMode::FullXml);
+    status = hasGroups
+        ? "Loaded shared XML in XML Groups mode. Choose one group to pattern."
+        : "Loaded shared XML in Full XML mode.";
+    return true;
 }
 
 void PatternsTab::RenderOverlay()
 {
+    if (!toolActive) return;
     if (allSourceProps.empty()) { hoveredControl=activeControl=0; hoveredPointGroup=-1; inputCaptured=false; return; }
     Mumble::Data* mumble=AppRuntime::GetMumble();
     if (mumble==nullptr || mumble->Context.MapID==0) { hoveredControl=activeControl=0; inputCaptured=false; return; }
@@ -1967,6 +1965,13 @@ void PatternsTab::RenderOverlay()
     DrawGroupSelection(camera,io.DisplaySize,draw);
     if (!sourceProps.empty())
     { DrawPreview(camera,io.DisplaySize,draw); DrawManipulators(camera,io.DisplaySize,draw); }
+}
+
+void PatternsTab::SetActive(bool active)
+{
+    if (toolActive == active) return;
+    toolActive = active;
+    if (active && !allSourceProps.empty()) UpdateCounter();
 }
 
 void PatternsTab::ClearImportedData()
@@ -1989,6 +1994,7 @@ void PatternsTab::ClearImportedData()
 
 UINT PatternsTab::WndProc(HWND,UINT message,WPARAM,LPARAM lParam)
 {
+    if (!toolActive) return 1;
     switch (message)
     {
     case WM_MOUSEMOVE: case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK:

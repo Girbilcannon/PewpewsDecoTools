@@ -21,6 +21,8 @@ namespace AppSettings
         bool showDecorationCounter = true;
         bool automaticGroupBackupRestore = true;
         bool backupUngroupedXmls = false;
+        bool quickStartCompleted = false;
+        bool useDecoToolsInterfaceStyle = true;
 
         bool showBoundingBox = false;
         bool showSolidFaces = false;

@@ -1,6 +1,9 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <ClCompile Include="src\Core\SharedXmlWorkspace.cpp">
+      <Filter>Source Files\Core</Filter>
+    </ClCompile>
     <Filter Include="Source Files">
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
@@ -33,30 +36,20 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Core\SharedXmlWorkspace.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
     <Image Include="src\Resources\tray.png">
       <Filter>Resource Files</Filter>
     </Image>
-    <Image Include="src\Resources\nav_move.png">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="src\Resources\nav_patterns.png">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="src\Resources\nav_map_swap.png">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="src\Resources\nav_group_tools.png">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="src\Resources\nav_group_backup.png">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="src\Resources\nav_documentation.png">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="src\Resources\nav_settings.png">
-      <Filter>Resource Files</Filter>
-    </Image>
+    <Image Include="src\Resources\nav_move.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_patterns.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_map_swap.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_group_tools.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_group_backup.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_documentation.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_settings.png"><Filter>Resource Files</Filter></Image>
+    <None Include="src\imgui\misc\fonts\Roboto-Medium.ttf"><Filter>Resource Files</Filter></None>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\DecoTools.rc">
@@ -97,6 +90,15 @@
     <ClCompile Include="src\UI\MainWindow.cpp">
       <Filter>Source Files\UI</Filter>
     </ClCompile>
+    <ClCompile Include="src\UI\DecoToolsStyle.cpp">
+      <Filter>Source Files\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\QuickStartWindow.cpp">
+      <Filter>Source Files\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\StatusBar.cpp">
+      <Filter>Source Files\UI</Filter>
+    </ClCompile>
     <ClCompile Include="src\UI\DecorationCounterWindow.cpp">
       <Filter>Source Files\UI</Filter>
     </ClCompile>
@@ -106,8 +108,8 @@
     <ClCompile Include="src\UI\Tabs\MergeExtractTab.cpp">
       <Filter>Source Files\UI\Tabs</Filter>
     </ClCompile>
-    <ClCompile Include="src\UI\Tabs\GroupMoverTab.cpp">
-      <Filter>Source Files\UI\Tabs</Filter>
+    <ClCompile Include="src\UI\MoveToolGroups.cpp">
+      <Filter>Source Files\UI</Filter>
     </ClCompile>
     <ClCompile Include="src\UI\Tabs\GroupBackupRestoreTab.cpp">
       <Filter>Source Files\UI\Tabs</Filter>
@@ -180,7 +182,19 @@
     <ClInclude Include="src\UI\MainWindow.h">
       <Filter>Header Files\UI</Filter>
     </ClInclude>
+    <ClInclude Include="src\UI\DecoToolsStyle.h">
+      <Filter>Header Files\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\QuickStartWindow.h">
+      <Filter>Header Files\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\StatusBar.h">
+      <Filter>Header Files\UI</Filter>
+    </ClInclude>
     <ClInclude Include="src\UI\ManipulatorUtils.h">
+      <Filter>Header Files\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\PrimaryActionButton.h">
       <Filter>Header Files\UI</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\DecorationCounterWindow.h">
@@ -195,8 +209,8 @@
     <ClInclude Include="src\UI\Tabs\MergeExtractTab.h">
       <Filter>Header Files\UI\Tabs</Filter>
     </ClInclude>
-    <ClInclude Include="src\UI\Tabs\GroupMoverTab.h">
-      <Filter>Header Files\UI\Tabs</Filter>
+    <ClInclude Include="src\UI\MoveToolGroups.h">
+      <Filter>Header Files\UI</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\Tabs\GroupBackupRestoreTab.h">
       <Filter>Header Files\UI\Tabs</Filter>

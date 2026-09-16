@@ -6,6 +6,7 @@
 
 #include "../../Core/AppSettings.h"
 #include "../../imgui/imgui.h"
+#include "../QuickStartWindow.h"
 
 namespace
 {
@@ -109,6 +110,20 @@ void SettingsTab::Render()
     }
 
     if (ImGui::Checkbox(
+        "Use Deco Tools Interface Style",
+        &settings.useDecoToolsInterfaceStyle
+    ))
+    {
+        AppSettings::MarkDirty();
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip(
+            "Protects Deco Tools from global Nexus style changes that can disrupt its layout. Disable this to inherit the complete Nexus interface style."
+        );
+    }
+
+    if (ImGui::Checkbox(
         "Automatically backup and restore XML groups",
         &settings.automaticGroupBackupRestore
     ))
@@ -137,4 +152,54 @@ void SettingsTab::Render()
         );
     }
     ImGui::Unindent();
+
+    ImGui::Dummy(ImVec2(0.0f, 16.0f));
+    RenderSectionHeading("Preview");
+
+    if (ImGui::Checkbox("Show Bounding Box", &settings.showBoundingBox))
+    {
+        AppSettings::MarkDirty();
+    }
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Show Solid Faces", &settings.showSolidFaces))
+    {
+        AppSettings::MarkDirty();
+    }
+
+    if (ImGui::ColorEdit4(
+        "Box Color",
+        settings.boxColor,
+        ImGuiColorEditFlags_NoInputs))
+    {
+        AppSettings::MarkDirty();
+    }
+    if (ImGui::ColorEdit4(
+        "Face Color",
+        settings.faceColor,
+        ImGuiColorEditFlags_NoInputs))
+    {
+        AppSettings::MarkDirty();
+    }
+    if (ImGui::ColorEdit4(
+        "Point Color",
+        settings.pointColor,
+        ImGuiColorEditFlags_NoInputs))
+    {
+        AppSettings::MarkDirty();
+    }
+
+    ImGui::TextDisabled(
+        "Decoration point visibility and size are available in the bottom status bar."
+    );
+
+    ImGui::Dummy(ImVec2(0.0f, 16.0f));
+    RenderSectionHeading("Quick Start Guide");
+    ImGui::TextWrapped(
+        "Reopen the initial setup pages and guided tutorials at any time."
+    );
+    ImGui::Spacing();
+    if (ImGui::Button("Open Quick Start / Tutorials", ImVec2(-1.0f, 0.0f)))
+    {
+        QuickStartWindow::Open();
+    }
 }

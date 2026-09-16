@@ -277,6 +277,16 @@ namespace
             "backupUngroupedXmls",
             settings.backupUngroupedXmls
         );
+        settings.quickStartCompleted = FindBool(
+            json,
+            "quickStartCompleted",
+            settings.quickStartCompleted
+        );
+        settings.useDecoToolsInterfaceStyle = FindBool(
+            json,
+            "useDecoToolsInterfaceStyle",
+            settings.useDecoToolsInterfaceStyle
+        );
 
         settings.showBoundingBox =
             FindBool(json, "showBoundingBox", settings.showBoundingBox);
@@ -350,7 +360,7 @@ void AppSettings::SaveNow()
 
     file << std::setprecision(9);
     file << "{\n";
-    file << "  \"version\": \"1.3.3.8\",\n";
+    file << "  \"version\": \"1.4.2.2\",\n";
     file << "  \"apiKey\": \"" << JsonEscape(settings.apiKey.data()) << "\",\n";
     file << "  \"homesteadFolder\": \"" << JsonEscape(settings.homesteadFolder.data()) << "\",\n";
     file << "  \"guildHallFolder\": \"" << JsonEscape(settings.guildHallFolder.data()) << "\",\n";
@@ -368,6 +378,10 @@ void AppSettings::SaveNow()
         << (settings.automaticGroupBackupRestore ? "true" : "false") << ",\n";
     file << "  \"backupUngroupedXmls\": "
         << (settings.backupUngroupedXmls ? "true" : "false") << ",\n";
+    file << "  \"quickStartCompleted\": "
+        << (settings.quickStartCompleted ? "true" : "false") << ",\n";
+    file << "  \"useDecoToolsInterfaceStyle\": "
+        << (settings.useDecoToolsInterfaceStyle ? "true" : "false") << ",\n";
     file << "  \"showBoundingBox\": "
         << (settings.showBoundingBox ? "true" : "false") << ",\n";
     file << "  \"showSolidFaces\": "

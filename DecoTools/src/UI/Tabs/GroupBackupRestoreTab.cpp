@@ -8,6 +8,7 @@
 #include "../../Core/Utf8Paths.h"
 #include "../../Core/XmlFileUtils.h"
 #include "../XmlComboHelpers.h"
+#include "../StatusBar.h"
 #include "../../imgui/imgui.h"
 #include "../../imgui/imgui_internal.h"
 
@@ -391,7 +392,6 @@ namespace
 
 void GroupBackupRestoreTab::Render()
 {
-    InitializeXmlList();
     const bool automatic = AppSettings::Get().automaticGroupBackupRestore;
     ImGui::TextUnformatted("Auto backup/restore is ");
     ImGui::SameLine(0.0f, 0.0f);
@@ -399,42 +399,6 @@ void GroupBackupRestoreTab::Render()
         : ImVec4(1.0f, 0.30f, 0.25f, 1.0f), automatic ? "enabled" : "disabled");
     ImGui::SameLine(0.0f, 0.0f);
     ImGui::TextUnformatted(" in Settings.");
-
-    ImGui::Dummy({ 0.0f, 12.0f });
-    RenderSectionHeading("Import");
-    ImGui::Dummy({ 0.0f, 8.0f });
-    ImGui::TextUnformatted("Import Decoration XML");
-    if (ImGui::RadioButton("Homestead##GroupBackup", &selectedFolderType, 0)) RefreshXmlList();
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Guild Hall##GroupBackup", &selectedFolderType, 1)) RefreshXmlList();
-    const bool hasSelection = selectedXmlIndex >= 0 &&
-        selectedXmlIndex < static_cast<int>(availableXmlFiles.size());
-    const char* selectedName = hasSelection
-        ? availableXmlFiles[static_cast<size_t>(selectedXmlIndex)].name.c_str()
-        : "No XML files available";
-    ImGui::SetNextItemWidth(-1.0f);
-    XmlComboHelpers::SetPopupWidth(availableXmlFiles);
-    if (ImGui::BeginCombo("##GroupBackupXmlList", selectedName))
-    {
-        for (size_t index = 0; index < availableXmlFiles.size(); ++index)
-        {
-            const bool selected = selectedXmlIndex == static_cast<int>(index);
-            if (ImGui::Selectable(availableXmlFiles[index].name.c_str(), selected))
-                selectedXmlIndex = static_cast<int>(index);
-            if (selected) ImGui::SetItemDefaultFocus();
-        }
-        ImGui::EndCombo();
-    }
-    const float halfWidth =
-        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-    if (ImGui::Button("Refresh List##GroupBackup", { halfWidth, 0.0f })) RefreshXmlList();
-    ImGui::SameLine();
-    if (hasSelection)
-    {
-        if (ImGui::Button("Import Selected##GroupBackup", { halfWidth, 0.0f }))
-            ImportSelected();
-    }
-    else RenderDisabledButton("Import Selected##GroupBackup", { halfWidth, 0.0f });
 
     ImGui::Dummy({ 0.0f, 16.0f });
     RenderSectionHeading("Manual Backup");
@@ -612,8 +576,29 @@ void GroupBackupRestoreTab::Render()
         rebuildStatus.clear();
     }
 
-    ImGui::Spacing();
-    ImGui::TextDisabled("%s", status.c_str());
+    StatusBar::PublishIfChanged(&status, status);
+}
+
+bool GroupBackupRestoreTab::ImportSharedPath(const std::string& path)
+{
+    int type = -1;
+    size_t groups = 0;
+    size_t props = 0;
+    if (!GroupBackupDatabase::InspectFile(path, type, groups, props))
+    {
+        status = "The shared file is not a valid Decorations XML.";
+        return false;
+    }
+    importedPath = path;
+    importedName = Utf8Paths::ToUtf8(Utf8Paths::FromUtf8(path).filename());
+    importedType = type;
+    importedGroupCount = groups;
+    importedPropCount = props;
+    selectedFolderType = type;
+    ClearRestoreSelection();
+    manualXmlCandidates = ScanGroupedXmlCandidates(importedType, importedPath);
+    status = "Using shared XML " + importedName + ".";
+    return true;
 }
 
 void GroupBackupRestoreTab::RenderAutoRestorePopup()

@@ -3,9 +3,13 @@
 
 #pragma once
 
+#include <string>
+
 namespace MapSwapTab
 {
     void Render();
+    bool ImportSharedPath(const std::string& path);
+    void SetActive(bool active);
     void ClearImportedData();
     void Shutdown();
 }

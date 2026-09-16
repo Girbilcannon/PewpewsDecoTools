@@ -3,6 +3,7 @@
 // current XML requirements, displays shortages, and exports count reports.
 
 #include "DecorationCounterWindow.h"
+#include "PrimaryActionButton.h"
 
 #include "../Core/AppSettings.h"
 #include "../Core/DecorationDatabase.h"
@@ -345,7 +346,7 @@ void DecorationCounterWindow::Render()
     bool open = settings.showDecorationCounter;
     if (ImGui::Begin("Decoration Count", &open))
     {
-        if (ImGui::Button("Export List"))
+        if (PrimaryActionButton::Draw("Export List"))
         {
             ExportList();
         }
@@ -399,8 +400,8 @@ void DecorationCounterWindow::Render()
             const bool missing = availabilityKnown && count < item.required;
             const int maxCount =
                 DecorationDatabase::FindMaxCountById(item.id, decorationType);
-            const bool atMaximum = maxCount >= 0 && item.required >= maxCount;
-            if (missing || atMaximum)
+            const bool overMaximum = maxCount >= 0 && item.required > maxCount;
+            if (missing || overMaximum)
             {
                 ImGui::PushStyleColor(
                     ImGuiCol_Text,
@@ -415,7 +416,7 @@ void DecorationCounterWindow::Render()
             if (maxCount >= 0) ImGui::Text("%d", maxCount);
             else ImGui::TextUnformatted("-");
             ImGui::NextColumn();
-            if (missing || atMaximum) ImGui::PopStyleColor();
+            if (missing || overMaximum) ImGui::PopStyleColor();
         }
         ImGui::Columns(1);
         ImGui::Separator();

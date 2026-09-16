@@ -7,10 +7,13 @@
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
 #include "../../Core/GroupBackupDatabase.h"
+#include "../../Core/SharedXmlWorkspace.h"
 #include "../../Core/Gw2Api.h"
 #include "../../Core/Utf8Paths.h"
 #include "../../Core/XmlFileUtils.h"
 #include "../DecorationCounterWindow.h"
+#include "../PrimaryActionButton.h"
+#include "../StatusBar.h"
 #include "../XmlComboHelpers.h"
 #include "../../imgui/imgui.h"
 #include "../../imgui/imgui_internal.h"
@@ -123,6 +126,7 @@ namespace
     bool listedSubFolders = false;
     bool includeMissing = true;
     bool guildLoadAttempted = false;
+    bool toolActive = false;
 
     std::vector<XmlFileEntry> availableXmlFiles;
     std::vector<Guild> guilds;
@@ -467,17 +471,20 @@ namespace
         return output;
     }
 
-    bool ImportXml(const std::string& path)
+    bool ImportXml(const std::string& path, bool prepareGroupRestore = true)
     {
-        const GroupBackupDatabase::ImportResult groupRestore =
-            GroupBackupDatabase::PrepareImport(
-                path,-1,AppSettings::Get().automaticGroupBackupRestore,
-                AppSettings::Get().backupUngroupedXmls);
-        if (groupRestore.action == GroupBackupDatabase::ImportAction::NeedsUserChoice ||
-            groupRestore.action == GroupBackupDatabase::ImportAction::Error)
+        if (prepareGroupRestore)
         {
-            status = groupRestore.message;
-            return false;
+            const GroupBackupDatabase::ImportResult groupRestore =
+                GroupBackupDatabase::PrepareImport(
+                    path,-1,AppSettings::Get().automaticGroupBackupRestore,
+                    AppSettings::Get().backupUngroupedXmls);
+            if (groupRestore.action == GroupBackupDatabase::ImportAction::NeedsUserChoice ||
+                groupRestore.action == GroupBackupDatabase::ImportAction::Error)
+            {
+                status = groupRestore.message;
+                return false;
+            }
         }
         std::ifstream file(Utf8Paths::FromUtf8(path), std::ios::binary);
         if (!file.is_open())
@@ -1143,6 +1150,7 @@ namespace
             RefreshXmlList();
         }
         status = "Exported " + Utf8Paths::ToUtf8(outputPath.filename()) + ".";
+        SharedXmlWorkspace::AdoptGeneratedFile(Utf8Paths::ToUtf8(outputPath));
     }
 }
 
@@ -1150,74 +1158,6 @@ void MapSwapTab::Render()
 {
     PollJob();
 
-    if (!fileListInitialized ||
-        listedSubFolders != AppSettings::Get().showXmlsFromSubFolders)
-    {
-        RefreshXmlList();
-    }
-
-    ImGui::Dummy(ImVec2(0.0f, 10.0f));
-    RenderSectionHeading("Import");
-    ImGui::Dummy(ImVec2(0.0f, 8.0f));
-    if (ImGui::RadioButton("Homestead##SwapFolder", selectedFolderType == 0))
-    {
-        selectedFolderType = 0;
-        RefreshXmlList();
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Guild Hall##SwapFolder", selectedFolderType == 1))
-    {
-        selectedFolderType = 1;
-        RefreshXmlList();
-    }
-
-    const char* selectedFileLabel =
-        selectedXmlIndex >= 0 &&
-        selectedXmlIndex < static_cast<int>(availableXmlFiles.size())
-        ? availableXmlFiles[static_cast<size_t>(selectedXmlIndex)].name.c_str()
-        : "No XML files found";
-    ImGui::SetNextItemWidth(-1.0f);
-    XmlComboHelpers::SetPopupWidth(availableXmlFiles);
-    if (ImGui::BeginCombo("##SwapXmlList", selectedFileLabel))
-    {
-        for (size_t index = 0; index < availableXmlFiles.size(); ++index)
-        {
-            const bool selected = selectedXmlIndex == static_cast<int>(index);
-            ImGui::PushID(static_cast<int>(index));
-            if (ImGui::Selectable(availableXmlFiles[index].name.c_str(), selected))
-            {
-                selectedXmlIndex = static_cast<int>(index);
-            }
-            if (selected)
-            {
-                ImGui::SetItemDefaultFocus();
-            }
-            ImGui::PopID();
-        }
-        ImGui::EndCombo();
-    }
-
-    const float buttonWidth =
-        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-    if (ImGui::Button("Refresh List##Swap", ImVec2(buttonWidth, 0.0f)))
-    {
-        RefreshXmlList();
-    }
-    ImGui::SameLine();
-    if (selectedXmlIndex >= 0 &&
-        selectedXmlIndex < static_cast<int>(availableXmlFiles.size()))
-    {
-        if (ImGui::Button("Import Selected##Swap", ImVec2(buttonWidth, 0.0f)))
-        {
-            ImportXml(availableXmlFiles[static_cast<size_t>(selectedXmlIndex)].path);
-        }
-    }
-    else
-    {
-        RenderDisabledButton("Import Selected##Swap", ImVec2(buttonWidth, 0.0f));
-    }
-
-    ImGui::Dummy(ImVec2(0.0f, 16.0f));
     RenderSectionHeading("Destination");
 
     ImGui::SetNextItemWidth(-1.0f);
@@ -1380,7 +1320,7 @@ void MapSwapTab::Render()
     RenderSectionHeading("Export");
     if (precheck.valid && activeJobKind == JobKind::None)
     {
-        if (ImGui::Button("Swap Maps and Export"))
+        if (PrimaryActionButton::Draw("Swap Maps and Export"))
         {
             ExportSwap();
         }
@@ -1390,12 +1330,22 @@ void MapSwapTab::Render()
         RenderDisabledButton("Swap Maps and Export");
     }
 
-    ImGui::Spacing();
-    ImGui::TextDisabled("%s", status.c_str());
-    ImGui::TextDisabled(
-        "Decoration database: %d entries",
-        DecorationDatabase::Count()
-    );
+    StatusBar::PublishIfChanged(&status, status);
+}
+
+bool MapSwapTab::ImportSharedPath(const std::string& path)
+{
+    ClearImportedData();
+    return ImportXml(path, false);
+}
+
+void MapSwapTab::SetActive(bool active)
+{
+    if (toolActive == active) return;
+    toolActive = active;
+    if (!active) return;
+    if (precheck.valid) FinishReport();
+    else DecorationCounterWindow::Clear();
 }
 
 void MapSwapTab::ClearImportedData()

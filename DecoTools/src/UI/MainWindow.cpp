@@ -6,8 +6,11 @@
 
 #include "../Core/AppSettings.h"
 #include "../Core/AppRuntime.h"
+#include "../Core/SharedXmlWorkspace.h"
 #include "../imgui/imgui.h"
 #include "DecorationCounterWindow.h"
+#include "QuickStartWindow.h"
+#include "StatusBar.h"
 #include "Tabs/DocumentationTab.h"
 #include "Tabs/GroupBackupRestoreTab.h"
 #include "Tabs/MapSwapTab.h"
@@ -15,6 +18,9 @@
 #include "Tabs/MoveToolTab.h"
 #include "Tabs/PatternsTab.h"
 #include "Tabs/SettingsTab.h"
+
+#include <algorithm>
+#include <cstdint>
 
 namespace
 {
@@ -31,6 +37,11 @@ namespace
     };
 
     ActiveTab activeTab = ActiveTab::MoveTool;
+    std::uint64_t moveRevision = 0;
+    std::uint64_t patternsRevision = 0;
+    std::uint64_t mapSwapRevision = 0;
+    std::uint64_t groupToolsRevision = 0;
+    std::uint64_t backupRevision = 0;
 
     void ActivateTab(ActiveTab next)
     {
@@ -39,28 +50,48 @@ namespace
             return;
         }
 
-        if (activeTab == ActiveTab::MoveTool)
-        {
-            MoveToolTab::ClearImportedData();
-        }
-        else if (activeTab == ActiveTab::Patterns)
-        {
-            PatternsTab::ClearImportedData();
-        }
-        else if (activeTab == ActiveTab::MapSwap)
-        {
-            MapSwapTab::ClearImportedData();
-        }
-        else if (activeTab == ActiveTab::MergeExtract)
-        {
-            MergeExtractTab::ClearImportedData();
-        }
-        else if (activeTab == ActiveTab::GroupBackupRestore)
-        {
-            GroupBackupRestoreTab::ClearImportedData();
-        }
-
+        SharedXmlWorkspace::RefreshIfChanged();
         activeTab = next;
+    }
+
+    void SynchronizeActiveTool()
+    {
+        if (!SharedXmlWorkspace::HasImport()) return;
+        const std::uint64_t revision = SharedXmlWorkspace::Revision();
+        const std::string& path = SharedXmlWorkspace::Path();
+        if (activeTab == ActiveTab::MoveTool && moveRevision != revision)
+        {
+            MoveToolTab::ImportSharedPath(path, SharedXmlWorkspace::HasGroups());
+            moveRevision = revision;
+        }
+        else if (activeTab == ActiveTab::Patterns && patternsRevision != revision)
+        {
+            PatternsTab::ImportSharedPath(path, SharedXmlWorkspace::HasGroups());
+            patternsRevision = revision;
+        }
+        else if (activeTab == ActiveTab::MapSwap && mapSwapRevision != revision)
+        {
+            MapSwapTab::ImportSharedPath(path);
+            mapSwapRevision = revision;
+        }
+        else if (activeTab == ActiveTab::MergeExtract && groupToolsRevision != revision)
+        {
+            MergeExtractTab::ImportSharedPath(path);
+            groupToolsRevision = revision;
+        }
+        else if (activeTab == ActiveTab::GroupBackupRestore && backupRevision != revision)
+        {
+            GroupBackupRestoreTab::ImportSharedPath(path);
+            backupRevision = revision;
+        }
+    }
+
+    void UpdateActiveToolOverlay()
+    {
+        MoveToolTab::SetActive(activeTab == ActiveTab::MoveTool);
+        PatternsTab::SetActive(activeTab == ActiveTab::Patterns);
+        MapSwapTab::SetActive(activeTab == ActiveTab::MapSwap);
+        MergeExtractTab::SetActive(activeTab == ActiveTab::MergeExtract);
     }
 
     struct NavigationItem
@@ -117,9 +148,23 @@ namespace
 void MainWindow::Render()
 {
     AppSettings::Data& settings = AppSettings::Get();
+    if (QuickStartWindow::IsInitialSetupActive())
+    {
+        MoveToolTab::SetActive(false);
+        PatternsTab::SetActive(false);
+        MapSwapTab::SetActive(false);
+        MergeExtractTab::SetActive(false);
+        QuickStartWindow::Render();
+        return;
+    }
     if (!settings.windowVisible)
     {
+        MoveToolTab::SetActive(false);
+        PatternsTab::SetActive(false);
+        MapSwapTab::SetActive(false);
+        MergeExtractTab::SetActive(false);
         DecorationCounterWindow::Render();
+        QuickStartWindow::Render();
         return;
     }
 
@@ -128,6 +173,7 @@ void MainWindow::Render()
     const bool wasVisible = settings.windowVisible;
     if (ImGui::Begin("Pewpew's Deco Tools", &settings.windowVisible))
     {
+        SharedXmlWorkspace::RenderImporter();
         constexpr NavigationItem tools[] =
         {
             { ActiveTab::MergeExtract, "Group Tools", "GroupTools", "DECOTOOLS_NAV_GROUP_TOOLS" },
@@ -142,14 +188,22 @@ void MainWindow::Render()
         const NavigationItem documentationItem =
             { ActiveTab::Documentation, "Documentation", "Documentation", "DECOTOOLS_NAV_DOCUMENTATION" };
 
-        ImGui::BeginChild("##DecoToolsNavigation", ImVec2(190.0f, 0.0f), true);
+        constexpr float StatusAreaHeight = 48.0f;
+        const float toolAreaHeight = (std::max)(
+            1.0f,
+            ImGui::GetContentRegionAvail().y - StatusAreaHeight);
+
+        ImGui::BeginChild(
+            "##DecoToolsNavigation",
+            ImVec2(190.0f, toolAreaHeight),
+            true);
         ImGui::TextDisabled("TOOLS");
         ImGui::Separator();
         for (const NavigationItem& item : tools)
         {
             if (DrawNavigationItem(item)) ActivateTab(item.tab);
         }
-        const float footerY = ImGui::GetWindowHeight() - 129.0f;
+        const float footerY = ImGui::GetWindowHeight() - 138.0f;
         if (ImGui::GetCursorPosY() < footerY) ImGui::SetCursorPosY(footerY);
         ImGui::Separator();
         if (DrawNavigationItem(groupBackupRestoreItem)) ActivateTab(groupBackupRestoreItem.tab);
@@ -158,7 +212,12 @@ void MainWindow::Render()
         ImGui::EndChild();
 
         ImGui::SameLine();
-        ImGui::BeginChild("##DecoToolsContent", ImVec2(0.0f, 0.0f), false);
+        ImGui::BeginChild(
+            "##DecoToolsContent",
+            ImVec2(0.0f, toolAreaHeight),
+            false);
+        UpdateActiveToolOverlay();
+        SynchronizeActiveTool();
         if (activeTab == ActiveTab::MoveTool) MoveToolTab::Render();
         else if (activeTab == ActiveTab::Patterns) PatternsTab::Render();
         else if (activeTab == ActiveTab::MapSwap) MapSwapTab::Render();
@@ -167,6 +226,9 @@ void MainWindow::Render()
         else if (activeTab == ActiveTab::Documentation) DocumentationTab::Render();
         else if (activeTab == ActiveTab::Settings) SettingsTab::Render();
         ImGui::EndChild();
+
+        ImGui::Separator();
+        StatusBar::Render();
         GroupBackupRestoreTab::RenderAutoRestorePopup();
     }
 
@@ -180,6 +242,7 @@ void MainWindow::Render()
     }
 
     DecorationCounterWindow::Render();
+    QuickStartWindow::Render();
 }
 
 void MainWindow::RenderOptions()

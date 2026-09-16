@@ -3,15 +3,18 @@
 // in-game, supports interactive positioning, and exports relocated layouts.
 
 #include "MoveToolTab.h"
-#include "GroupMoverTab.h"
+#include "../MoveToolGroups.h"
 
 #include "../../Core/AppRuntime.h"
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
 #include "../../Core/GroupBackupDatabase.h"
+#include "../../Core/SharedXmlWorkspace.h"
 #include "../../Core/Utf8Paths.h"
 #include "../../Core/XmlFileUtils.h"
 #include "../DecorationCounterWindow.h"
+#include "../PrimaryActionButton.h"
+#include "../StatusBar.h"
 #include "../ManipulatorUtils.h"
 #include "../XmlComboHelpers.h"
 #include "../../imgui/imgui.h"
@@ -112,6 +115,7 @@ namespace
     int selectedXmlIndex = -1;
     bool fileListInitialized = false;
     bool listedSubFolders = false;
+    bool toolActive = true;
 
     int hoveredAxis = 0;
     int activeAxis = 0;
@@ -988,20 +992,23 @@ namespace
         RefreshXmlList();
     }
 
-    bool ImportXml(const std::string& path)
+    bool ImportXml(const std::string& path, bool prepareGroupRestore = true)
     {
-        const GroupBackupDatabase::ImportResult groupRestore =
-            GroupBackupDatabase::PrepareImport(
-            path,
-            -1,
-            AppSettings::Get().automaticGroupBackupRestore,
-            AppSettings::Get().backupUngroupedXmls
-        );
-        if (groupRestore.action == GroupBackupDatabase::ImportAction::NeedsUserChoice ||
-            groupRestore.action == GroupBackupDatabase::ImportAction::Error)
+        if (prepareGroupRestore)
         {
-            status = groupRestore.message;
-            return false;
+            const GroupBackupDatabase::ImportResult groupRestore =
+                GroupBackupDatabase::PrepareImport(
+                path,
+                -1,
+                AppSettings::Get().automaticGroupBackupRestore,
+                AppSettings::Get().backupUngroupedXmls
+            );
+            if (groupRestore.action == GroupBackupDatabase::ImportAction::NeedsUserChoice ||
+                groupRestore.action == GroupBackupDatabase::ImportAction::Error)
+            {
+                status = groupRestore.message;
+                return false;
+            }
         }
         std::ifstream file(Utf8Paths::FromUtf8(path), std::ios::binary);
         if (!file.is_open())
@@ -1300,6 +1307,7 @@ namespace
             "Exported " +
             Utf8Paths::ToUtf8(selectedFile.filename()) +
             " for " + destinationMap->mapName + ".";
+        SharedXmlWorkspace::AdoptGeneratedFile(Utf8Paths::ToUtf8(selectedFile));
     }
 
     float DistanceToSegment(ImVec2 point, ImVec2 start, ImVec2 end)
@@ -1935,128 +1943,11 @@ namespace
 
 void MoveToolTab::Render()
 {
-    AppSettings::Data& settings = AppSettings::Get();
     const bool hasXml = !props.empty();
-    InitializeXmlList();
-
-    RenderSectionHeading("Import");
-
-    ImGui::Dummy(ImVec2(0.0f, 8.0f));
-    ImGui::Text("Import Decoration XML");
-
-    if (ImGui::RadioButton("Homestead", &selectedFolderType, 0))
-    {
-        RefreshXmlList();
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Guild Hall", &selectedFolderType, 1))
-    {
-        RefreshXmlList();
-    }
-
-    const bool hasSelection =
-        selectedXmlIndex >= 0 &&
-        selectedXmlIndex < static_cast<int>(availableXmlFiles.size());
-    const char* selectedName = hasSelection
-        ? availableXmlFiles[static_cast<size_t>(selectedXmlIndex)].name.c_str()
-        : "No XML files available";
-
-    ImGui::SetNextItemWidth(-1.0f);
-    XmlComboHelpers::SetPopupWidth(availableXmlFiles);
-    if (ImGui::BeginCombo("##XmlFileList", selectedName))
-    {
-        for (size_t index = 0; index < availableXmlFiles.size(); ++index)
-        {
-            const bool selected =
-                selectedXmlIndex == static_cast<int>(index);
-            ImGui::PushID(static_cast<int>(index));
-            if (ImGui::Selectable(
-                availableXmlFiles[index].name.c_str(),
-                selected
-            ))
-            {
-                selectedXmlIndex = static_cast<int>(index);
-            }
-            if (selected)
-            {
-                ImGui::SetItemDefaultFocus();
-            }
-            ImGui::PopID();
-        }
-        ImGui::EndCombo();
-    }
-
-    const float actionWidth =
-        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) *
-        0.5f;
-    if (ImGui::Button("Refresh List", ImVec2(actionWidth, 0.0f)))
-    {
-        RefreshXmlList();
-    }
-    ImGui::SameLine();
-    if (hasSelection)
-    {
-        if (ImGui::Button("Import Selected", ImVec2(actionWidth, 0.0f)))
-        {
-            const std::string& path=
-                availableXmlFiles[static_cast<size_t>(selectedXmlIndex)].path;
-            const bool imported=moveSourceMode==MoveSourceMode::FullXml
-                ? ImportXml(path)
-                : GroupMoverTab::ImportPath(path);
-            if (imported)
-            {
-                sharedImportedPath=path;
-                if (moveSourceMode==MoveSourceMode::XmlGroups)
-                    status="Imported the selected XML for XML Groups.";
-            }
-        }
-    }
-    else
-    {
-        RenderDisabledButton(
-            "Import Selected",
-            ImVec2(actionWidth, 0.0f)
-        );
-    }
-
-    ImGui::TextDisabled("%s", status.c_str());
-
-    ImGui::Dummy(ImVec2(0.0f,16.0f));
-    RenderSectionHeading("Move Source");
-    int sourceMode=static_cast<int>(moveSourceMode);
-    bool sourceChanged=false;
-    if (ImGui::RadioButton("Full XML",&sourceMode,0)) sourceChanged=true;
-    ImGui::SameLine();
-    if (ImGui::RadioButton("XML Groups",&sourceMode,1)) sourceChanged=true;
-    if (sourceChanged)
-    {
-        const std::string path=sharedImportedPath;
-        const int previousSelection=selectedXmlIndex;
-        ClearImportedData();
-        moveSourceMode=static_cast<MoveSourceMode>(sourceMode);
-        selectedXmlIndex=previousSelection;
-        if (!path.empty())
-        {
-            const bool imported=moveSourceMode==MoveSourceMode::FullXml
-                ? ImportXml(path)
-                : GroupMoverTab::ImportPath(path);
-            if (imported)
-            {
-                sharedImportedPath=path;
-                if (moveSourceMode==MoveSourceMode::XmlGroups)
-                    status="Switched the imported XML to XML Groups.";
-            }
-        }
-    }
-    if (moveSourceMode==MoveSourceMode::FullXml)
-        ImGui::TextDisabled("Exports a new XML; the imported file remains unchanged.");
-    else
-        ImGui::TextDisabled("Applies selected-group changes directly to the imported XML.");
 
     if (moveSourceMode==MoveSourceMode::XmlGroups)
     {
-        ImGui::Dummy(ImVec2(0.0f,12.0f));
-        GroupMoverTab::RenderWorkspace();
+        MoveToolGroups::RenderWorkspace();
         return;
     }
 
@@ -2161,64 +2052,9 @@ void MoveToolTab::Render()
     }
 
     ImGui::Dummy(ImVec2(0.0f, 16.0f));
-    RenderSectionHeading("Preview");
-
-    if (ImGui::Checkbox("Show Bounding Box", &settings.showBoundingBox))
-    {
-        AppSettings::MarkDirty();
-    }
-    ImGui::SameLine();
-    if (ImGui::Checkbox("Show Solid Faces", &settings.showSolidFaces))
-    {
-        AppSettings::MarkDirty();
-    }
-    ImGui::SameLine();
-    if (ImGui::Checkbox("Show Decoration Points", &settings.showDecorationPoints))
-    {
-        AppSettings::MarkDirty();
-    }
-
-    if (ImGui::ColorEdit4(
-        "Box Color",
-        settings.boxColor,
-        ImGuiColorEditFlags_NoInputs
-    ))
-    {
-        AppSettings::MarkDirty();
-    }
-    if (ImGui::ColorEdit4(
-        "Face Color",
-        settings.faceColor,
-        ImGuiColorEditFlags_NoInputs
-    ))
-    {
-        AppSettings::MarkDirty();
-    }
-    if (ImGui::ColorEdit4(
-        "Point Color",
-        settings.pointColor,
-        ImGuiColorEditFlags_NoInputs
-    ))
-    {
-        AppSettings::MarkDirty();
-    }
-
-    ImGui::SetNextItemWidth(260.0f);
-    if (ImGui::SliderFloat(
-        "Point Size",
-        &settings.pointSize,
-        1.0f,
-        12.0f,
-        "%.0f px"
-    ))
-    {
-        AppSettings::MarkDirty();
-    }
-
-    ImGui::Dummy(ImVec2(0.0f, 16.0f));
     if (hasXml)
     {
-        if (ImGui::Button("Export Updated XML"))
+        if (PrimaryActionButton::Draw("Export Updated XML"))
         {
             ExportXml();
         }
@@ -2227,13 +2063,30 @@ void MoveToolTab::Render()
     {
         RenderDisabledButton("Export Updated XML");
     }
+    StatusBar::PublishIfChanged(&status, status);
+}
+
+bool MoveToolTab::ImportSharedPath(const std::string& path, bool hasGroups)
+{
+    ClearImportedData();
+    sharedImportedPath = path;
+    moveSourceMode = hasGroups
+        ? MoveSourceMode::XmlGroups
+        : MoveSourceMode::FullXml;
+    const bool imported = moveSourceMode == MoveSourceMode::XmlGroups
+        ? MoveToolGroups::ImportPath(path, false)
+        : ImportXml(path, false);
+    if (imported && moveSourceMode == MoveSourceMode::XmlGroups)
+        status = "Loaded shared XML in XML Groups mode.";
+    return imported;
 }
 
 void MoveToolTab::RenderOverlay()
 {
+    if (!toolActive) return;
     if (moveSourceMode==MoveSourceMode::XmlGroups)
     {
-        GroupMoverTab::RenderOverlay();
+        MoveToolGroups::RenderOverlay();
         return;
     }
     if (props.empty())
@@ -2268,9 +2121,36 @@ void MoveToolTab::RenderOverlay()
     DrawManipulator(camera, viewport, draw);
 }
 
+void MoveToolTab::SetActive(bool active)
+{
+    if (toolActive == active) return;
+    toolActive = active;
+    if (!active) return;
+    if (moveSourceMode == MoveSourceMode::XmlGroups)
+    {
+        MoveToolGroups::RefreshCounter();
+        return;
+    }
+    std::map<int, DecorationCounterWindow::Requirement> countById;
+    for (const PropPosition& prop : props)
+    {
+        auto& item = countById[prop.id];
+        item.id = prop.id;
+        item.name = prop.name;
+        ++item.required;
+    }
+    std::vector<DecorationCounterWindow::Requirement> counterItems;
+    for (const auto& [id, item] : countById)
+    {
+        static_cast<void>(id);
+        counterItems.push_back(item);
+    }
+    DecorationCounterWindow::SetRequirements(importedFileName, xmlType, counterItems);
+}
+
 void MoveToolTab::ClearImportedData()
 {
-    GroupMoverTab::ClearImportedData();
+    MoveToolGroups::ClearImportedData();
     DecorationCounterWindow::Clear();
     std::string().swap(xmlSource);
     std::string().swap(importedFileName);
@@ -2304,8 +2184,9 @@ void MoveToolTab::ClearImportedData()
 
 UINT MoveToolTab::WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    if (!toolActive) return 1;
     if (moveSourceMode==MoveSourceMode::XmlGroups)
-        return GroupMoverTab::WndProc(window,message,wParam,lParam);
+        return MoveToolGroups::WndProc(window,message,wParam,lParam);
     switch (message)
     {
     case WM_MOUSEMOVE:

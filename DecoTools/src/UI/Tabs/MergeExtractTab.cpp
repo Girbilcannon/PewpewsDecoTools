@@ -8,11 +8,14 @@
 #include "../../Core/AppSettings.h"
 #include "../../Core/DecorationDatabase.h"
 #include "../../Core/GroupBackupDatabase.h"
+#include "../../Core/SharedXmlWorkspace.h"
 #include "../../Core/Utf8Paths.h"
 #include "../../Core/XmlFileUtils.h"
 #include "../../imgui/imgui.h"
 #include "../../imgui/imgui_internal.h"
 #include "../DecorationCounterWindow.h"
+#include "../PrimaryActionButton.h"
+#include "../StatusBar.h"
 #include "../XmlComboHelpers.h"
 
 #include <algorithm>
@@ -24,6 +27,7 @@
 #include <fstream>
 #include <limits>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -87,13 +91,14 @@ namespace
         bool Project(Vec3 world, ImVec2 viewport, ImVec2& screen) const;
     };
 
-    int operation = 0;
+    int operation = 1;
     int selectedFolderType = 0;
     int baseXmlIndex = -1;
     int extractXmlIndex = -1;
     int groupXmlIndex = -1;
     bool fileListInitialized = false;
     bool listedSubFolders = false;
+    bool toolActive = false;
     std::vector<XmlFileEntry> availableXmlFiles;
     std::vector<unsigned char> additionalSelected;
     std::vector<XmlDocument> mergeDocuments;
@@ -101,6 +106,7 @@ namespace
     std::vector<Group> extractGroups;
     XmlDocument groupDocument;
     std::vector<Group> groups;
+    std::string sharedPath;
     std::array<char, 128> groupName = {};
     bool hideGrouped = false;
     bool marqueeMode = false;
@@ -114,6 +120,8 @@ namespace
     ImVec2 marqueeStart(0.0f, 0.0f);
     ImVec2 marqueeEnd(0.0f, 0.0f);
     std::string status = "No XML imported";
+    float mergeControlsHeight[2] = { 100.0f, 235.0f };
+    float extractControlsHeight = 105.0f;
     std::string report;
 
     Vec3 Subtract(Vec3 left, Vec3 right)
@@ -284,7 +292,8 @@ namespace
 
     void RefreshXmlList()
     {
-        ClearLoaded();
+        mergeDocuments.clear();
+        report.clear();
         availableXmlFiles.clear();
         additionalSelected.clear();
         baseXmlIndex = -1;
@@ -687,14 +696,101 @@ namespace
             document.source.substr(document.rootCloseStart);
     }
 
+    std::string UniqueGroupName(const std::string& requested,
+        std::set<std::string>& usedNames)
+    {
+        if (usedNames.insert(requested).second) return requested;
+        for (int copy = 2;; ++copy)
+        {
+            const std::string candidate = requested + " (" +
+                std::to_string(copy) + ")";
+            if (usedNames.insert(candidate).second) return candidate;
+        }
+    }
+
+    std::string BuildMergedXml(std::vector<XmlDocument>& documents,
+        size_t& renamedGroups)
+    {
+        renamedGroups = 0;
+        if (documents.empty()) return {};
+        XmlDocument& base = documents.front();
+        const char* newline = base.source.find("\r\n") != std::string::npos
+            ? "\r\n" : "\n";
+        std::vector<std::vector<Group>> documentGroups;
+        documentGroups.reserve(documents.size());
+        for (XmlDocument& document : documents)
+            documentGroups.push_back(ParseGroups(document));
+
+        std::ostringstream body;
+        for (const XmlDocument& document : documents)
+        {
+            for (const Prop& prop : document.props)
+            {
+                if (prop.groupIndex < 0)
+                {
+                    body << newline << "  "
+                        << document.source.substr(prop.start, prop.end - prop.start);
+                }
+            }
+        }
+
+        std::set<std::string> usedNames;
+        for (size_t documentIndex = 0;
+            documentIndex < documents.size(); ++documentIndex)
+        {
+            const XmlDocument& document = documents[documentIndex];
+            for (const Group& group : documentGroups[documentIndex])
+            {
+                const std::string name = UniqueGroupName(group.name, usedNames);
+                if (name != group.name) ++renamedGroups;
+                body << newline << newline << "  <!--" << name << "-->";
+                for (const Prop& prop : group.props)
+                {
+                    body << newline << "  "
+                        << document.source.substr(prop.start, prop.end - prop.start);
+                }
+            }
+        }
+        body << newline;
+        return base.source.substr(0, base.rootOpenEnd + 1) +
+            body.str() + base.source.substr(base.rootCloseStart);
+    }
+
+    std::string BuildXmlWithGroups(const XmlDocument& document,
+        const std::vector<const Group*>& includedGroups)
+    {
+        const char* newline = document.source.find("\r\n") != std::string::npos
+            ? "\r\n" : "\n";
+        std::ostringstream body;
+        for (const Prop& prop : document.props)
+        {
+            if (prop.groupIndex < 0)
+            {
+                body << newline << "  "
+                    << document.source.substr(prop.start, prop.end - prop.start);
+            }
+        }
+        for (const Group* group : includedGroups)
+        {
+            body << newline << newline << "  <!--" << group->name << "-->";
+            for (const Prop& prop : group->props)
+            {
+                body << newline << "  "
+                    << document.source.substr(prop.start, prop.end - prop.start);
+            }
+        }
+        body << newline;
+        return document.source.substr(0, document.rootOpenEnd + 1) +
+            body.str() + document.source.substr(document.rootCloseStart);
+    }
+
     void PrepareMerge()
     {
         mergeDocuments.clear();
         report.clear();
-        if (baseXmlIndex < 0 ||
-            baseXmlIndex >= static_cast<int>(availableXmlFiles.size()))
+        if (sharedPath.empty())
         {
-            status = "Select a base layout first.";
+            status = "Import a shared XML before preparing a merge.";
             return;
         }
 
@@ -702,7 +798,7 @@ namespace
         for (size_t index = 0; index < additionalSelected.size(); ++index)
         {
             if (additionalSelected[index] &&
-                static_cast<int>(index) != baseXmlIndex)
+                availableXmlFiles[index].path != sharedPath)
             {
                 selected.push_back(static_cast<int>(index));
             }
@@ -715,10 +811,7 @@ namespace
 
         std::string error;
         XmlDocument base;
-        if (!LoadXml(
-            availableXmlFiles[static_cast<size_t>(baseXmlIndex)].path,
-            base,
-            error))
+        if (!LoadXml(sharedPath, base, error, false))
         {
             status = error;
             return;
@@ -732,7 +825,8 @@ namespace
             if (!LoadXml(
                 availableXmlFiles[static_cast<size_t>(index)].path,
                 document,
-                error))
+                error,
+                false))
             {
                 status = error;
                 mergeDocuments.clear();
@@ -783,7 +877,7 @@ namespace
         status = "Merge pre-check complete.";
     }
 
-    void ExportMerge()
+    void CompleteMerge()
     {
         if (mergeDocuments.size() < 2)
         {
@@ -800,31 +894,40 @@ namespace
             }
         }
 
-        std::ostringstream addition;
-        for (size_t index = 1; index < mergeDocuments.size(); ++index)
-        {
-            const XmlDocument& document = mergeDocuments[index];
-            addition << "\n  <!--" << Stem(document.fileName) << "-->\n";
-            for (const Prop& prop : document.props)
-            {
-                addition << "  "
-                    << document.source.substr(prop.start, prop.end - prop.start)
-                    << "\n";
-            }
-        }
-
-        const std::string merged =
-            base.source.substr(0, base.rootCloseStart) +
-            addition.str() +
-            base.source.substr(base.rootCloseStart);
-        const std::filesystem::path folder =
-            Utf8Paths::FromUtf8(base.path).parent_path();
-        const std::filesystem::path output =
-            XmlFileUtils::IndexedOperationPath(
-                folder, Stem(base.fileName), "_MERGED");
+        size_t renamedGroups = 0;
+        const std::string merged = BuildMergedXml(mergeDocuments, renamedGroups);
         std::string error;
-        if (WriteFile(output, merged, error))
+        const bool applyToCurrent = SharedXmlWorkspace::HasGroups();
+        if (applyToCurrent)
         {
+            if (!ReplaceFileSafely(Utf8Paths::FromUtf8(base.path), merged, error))
+            {
+                status = error;
+                return;
+            }
+            if (AppSettings::Get().automaticGroupBackupRestore)
+            {
+                std::string backupStatus;
+                GroupBackupDatabase::RecordFile(base.path, base.type,
+                    GroupBackupDatabase::RestorePointType::Auto,std::string(),backupStatus,
+                    AppSettings::Get().backupUngroupedXmls);
+            }
+            SharedXmlWorkspace::NotifyCurrentFileChanged();
+            status = "Merged " + std::to_string(mergeDocuments.size() - 1) +
+                " XML file(s) into " + base.fileName + ".";
+        }
+        else
+        {
+            const std::filesystem::path folder =
+                Utf8Paths::FromUtf8(base.path).parent_path();
+            const std::filesystem::path output =
+                XmlFileUtils::IndexedOperationPath(
+                    folder, Stem(base.fileName), "_MERGED");
+            if (!WriteFile(output, merged, error))
+            {
+                status = error;
+                return;
+            }
             if (AppSettings::Get().automaticGroupBackupRestore)
             {
                 std::string backupStatus;
@@ -833,11 +936,11 @@ namespace
                     AppSettings::Get().backupUngroupedXmls);
             }
             status = "Exported " + Utf8Paths::ToUtf8(output.filename()) + ".";
+            SharedXmlWorkspace::AdoptGeneratedFile(Utf8Paths::ToUtf8(output));
         }
-        else
-        {
-            status = error;
-        }
+        if (renamedGroups > 0)
+            status += " Renamed " + std::to_string(renamedGroups) +
+                " duplicate group name(s) to keep them selectable.";
     }
 
     void ClearGroupSelection(bool clearName)
@@ -976,6 +1079,7 @@ namespace
         }
 
         if (!ReloadGroupDocument(path, false)) return;
+        SharedXmlWorkspace::NotifyCurrentFileChanged();
         status = "Created group \"" + name + "\" with " +
             std::to_string(selectedCount) + " decorations.";
     }
@@ -1016,6 +1120,7 @@ namespace
                 AppSettings::Get().backupUngroupedXmls);
         }
         if (!ReloadGroupDocument(path, false)) return;
+        SharedXmlWorkspace::NotifyCurrentFileChanged();
         status = "Ungrouped \"" + name + "\" (" +
             std::to_string(count) + " decorations).";
     }
@@ -1074,65 +1179,32 @@ namespace
         return value.empty() ? "Decoration_Group" : value;
     }
 
-    void ExportExtract()
+    void ExportSelectedGroups(bool removeFromCurrent)
     {
         std::vector<const Group*> selected;
+        std::vector<const Group*> remaining;
         for (const Group& group : extractGroups)
         {
             if (group.selected) selected.push_back(&group);
+            else remaining.push_back(&group);
         }
         if (selected.empty())
         {
-            status = "Select at least one group to extract.";
+            status = "Select at least one group first.";
             return;
         }
 
         const std::filesystem::path folder =
             Utf8Paths::FromUtf8(extractDocument.path).parent_path();
-        std::string stripped = extractDocument.source;
-        std::vector<const Group*> descending = selected;
-        std::sort(descending.begin(), descending.end(),
-            [](const Group* left, const Group* right)
-            {
-                return left->start > right->start;
-            });
-        for (const Group* group : descending)
-        {
-            stripped.erase(group->start, group->end - group->start);
-        }
-
         std::string error;
-        const std::filesystem::path strippedPath =
-            XmlFileUtils::IndexedOperationPath(
-                folder, Stem(extractDocument.fileName), "_STRIPPED");
-        if (!WriteFile(strippedPath, stripped, error))
-        {
-            status = error;
-            return;
-        }
-        if (AppSettings::Get().automaticGroupBackupRestore)
-        {
-            std::string backupStatus;
-            GroupBackupDatabase::RecordFile(Utf8Paths::ToUtf8(strippedPath),extractDocument.type,
-                GroupBackupDatabase::RestorePointType::Auto,std::string(),backupStatus,
-                AppSettings::Get().backupUngroupedXmls);
-        }
-
         int exported = 0;
         for (const Group* group : selected)
         {
-            std::ostringstream body;
-            body << "\n  <!--" << group->name << "-->\n";
-            for (const Prop& prop : group->props)
-            {
-                body << "  "
-                    << extractDocument.source.substr(prop.start, prop.end - prop.start)
-                    << "\n";
-            }
-            const std::string outputXml =
-                extractDocument.source.substr(0, extractDocument.rootOpenEnd + 1) +
-                body.str() +
-                extractDocument.source.substr(extractDocument.rootCloseStart);
+            const std::vector<const Group*> oneGroup = { group };
+            XmlDocument groupOnlyDocument = extractDocument;
+            for (Prop& prop : groupOnlyDocument.props) prop.groupIndex = 0;
+            const std::string outputXml = BuildXmlWithGroups(
+                groupOnlyDocument, oneGroup);
             const std::filesystem::path output = XmlFileUtils::IndexedOperationPath(
                 folder, SafeFileStem(group->name), "_EXTRACTED");
             if (!WriteFile(output, outputXml, error))
@@ -1149,9 +1221,103 @@ namespace
             }
             ++exported;
         }
-        status = "Exported " + std::to_string(exported) +
-            " group file(s) and " +
-            Utf8Paths::ToUtf8(strippedPath.filename()) + ".";
+
+        if (removeFromCurrent)
+        {
+            const std::string updated = BuildXmlWithGroups(
+                extractDocument, remaining);
+            if (!ReplaceFileSafely(
+                Utf8Paths::FromUtf8(extractDocument.path), updated, error))
+            {
+                status = error + " The extracted group XML file(s) were still created.";
+                return;
+            }
+            if (AppSettings::Get().automaticGroupBackupRestore)
+            {
+                std::string backupStatus;
+                GroupBackupDatabase::RecordFile(extractDocument.path,
+                    extractDocument.type,
+                    GroupBackupDatabase::RestorePointType::Auto,
+                    std::string(), backupStatus,
+                    AppSettings::Get().backupUngroupedXmls);
+            }
+            SharedXmlWorkspace::NotifyCurrentFileChanged();
+            status = "Extracted " + std::to_string(exported) +
+                " group file(s) and removed them from " +
+                extractDocument.fileName + ".";
+        }
+        else
+        {
+            status = "Copied " + std::to_string(exported) +
+                " group file(s). The current XML was not changed.";
+        }
+    }
+
+    void DeleteSelectedGroups()
+    {
+        std::vector<const Group*> remaining;
+        size_t deletedGroups = 0;
+        size_t deletedProps = 0;
+        for (const Group& group : extractGroups)
+        {
+            if (group.selected)
+            {
+                ++deletedGroups;
+                deletedProps += group.props.size();
+            }
+            else
+            {
+                remaining.push_back(&group);
+            }
+        }
+        if (deletedGroups == 0)
+        {
+            status = "Select at least one group first.";
+            return;
+        }
+
+        // Preserve a complete recovery point before this destructive operation,
+        // regardless of whether automatic backups are enabled.
+        std::string backupStatus;
+        if (!GroupBackupDatabase::RecordFile(
+            extractDocument.path,
+            extractDocument.type,
+            GroupBackupDatabase::RestorePointType::Safety,
+            "Before Delete Selected",
+            backupStatus,
+            true))
+        {
+            status = "Could not create the safety backup. " + backupStatus;
+            return;
+        }
+
+        const std::string updated = BuildXmlWithGroups(extractDocument, remaining);
+        std::string error;
+        if (!ReplaceFileSafely(
+            Utf8Paths::FromUtf8(extractDocument.path), updated, error))
+        {
+            status = error;
+            return;
+        }
+
+        if (AppSettings::Get().automaticGroupBackupRestore)
+        {
+            std::string automaticStatus;
+            GroupBackupDatabase::RecordFile(
+                extractDocument.path,
+                extractDocument.type,
+                GroupBackupDatabase::RestorePointType::Auto,
+                std::string(),
+                automaticStatus,
+                AppSettings::Get().backupUngroupedXmls);
+        }
+
+        SharedXmlWorkspace::NotifyCurrentFileChanged();
+        status = "Deleted " + std::to_string(deletedGroups) +
+            (deletedGroups == 1 ? " selected group and " : " selected groups and ") +
+            std::to_string(deletedProps) +
+            (deletedProps == 1 ? " decoration from " : " decorations from ") +
+            extractDocument.fileName + ". A safety backup was created first.";
     }
 
     void RenderFolderChoice()
@@ -1206,43 +1372,53 @@ void MergeExtractTab::Render()
     }
 
     RenderSectionHeading("Operation");
-    if (ImGui::RadioButton("Merge XML Files", operation == 0))
-    {
-        operation = 0;
-        ClearLoaded();
-    }
-    ImGui::SameLine();
     if (ImGui::RadioButton("Group Decorations", operation == 1))
     {
         operation = 1;
-        ClearLoaded();
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Merge XML Files", operation == 0))
+    {
+        operation = 0;
     }
     ImGui::SameLine();
     if (ImGui::RadioButton("Extract Groups", operation == 2))
     {
         operation = 2;
-        ClearLoaded();
+        if (!sharedPath.empty())
+        {
+            XmlDocument current;
+            std::string error;
+            if (LoadXml(sharedPath, current, error, false))
+            {
+                extractDocument = std::move(current);
+                extractGroups = ParseGroups(extractDocument);
+            }
+            else status = error;
+        }
     }
 
     ImGui::Dummy(ImVec2(0.0f, 16.0f));
-    RenderSectionHeading(
-        operation == 0 ? "Merge Source Files" :
-        operation == 1 ? "Group Source File" : "Extract Source File"
-    );
-    RenderFolderChoice();
-    ImGui::Spacing();
 
     if (operation == 0)
     {
-        ImGui::Text("Base Layout");
-        RenderXmlCombo("##MergeBaseXml", baseXmlIndex);
-
-        ImGui::Dummy(ImVec2(0.0f, 14.0f));
+        ImGui::Text("Base Layout: %s", groupDocument.fileName.empty()
+            ? "No shared XML imported"
+            : groupDocument.fileName.c_str());
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
         ImGui::Text("Additional XML Files");
-        ImGui::BeginChild("##MergeFileChecklist", ImVec2(0.0f, 130.0f), true);
+        const bool reportVisibleBeforeList = !report.empty();
+        const float mergeListHeight = (std::max)(
+            100.0f,
+            ImGui::GetContentRegionAvail().y -
+                mergeControlsHeight[reportVisibleBeforeList ? 1 : 0]);
+        ImGui::BeginChild(
+            "##MergeFileChecklist",
+            ImVec2(0.0f, mergeListHeight),
+            true);
         for (size_t index = 0; index < availableXmlFiles.size(); ++index)
         {
-            if (static_cast<int>(index) == baseXmlIndex) continue;
+            if (availableXmlFiles[index].path == sharedPath) continue;
             bool selected = additionalSelected[index] != 0;
             if (ImGui::Checkbox(
                 (availableXmlFiles[index].name + "##MergeAdd" +
@@ -1251,11 +1427,13 @@ void MergeExtractTab::Render()
             ))
             {
                 additionalSelected[index] = selected ? 1 : 0;
-                ClearLoaded();
+                mergeDocuments.clear();
+                report.clear();
             }
         }
         ImGui::EndChild();
 
+        const float mergeControlsStartY = ImGui::GetCursorPosY();
         const float width =
             (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         if (ImGui::Button("Refresh List##Merge", ImVec2(width, 0.0f)))
@@ -1277,38 +1455,38 @@ void MergeExtractTab::Render()
         }
 
         ImGui::Dummy(ImVec2(0.0f, 16.0f));
-        RenderSectionHeading("Export");
+        RenderSectionHeading(SharedXmlWorkspace::HasGroups() ? "Apply" : "Export");
         if (mergeDocuments.size() >= 2)
         {
-            if (ImGui::Button("Merge and Export")) ExportMerge();
+            if (PrimaryActionButton::Draw(SharedXmlWorkspace::HasGroups()
+                ? "Merge" : "Merge and Export")) CompleteMerge();
         }
         else
         {
-            RenderDisabledButton("Merge and Export");
+            RenderDisabledButton(SharedXmlWorkspace::HasGroups()
+                ? "Merge" : "Merge and Export");
+        }
+
+        const float measuredMergeControlsHeight =
+            ImGui::GetCursorPosY() - mergeControlsStartY;
+        if (measuredMergeControlsHeight > 0.0f)
+        {
+            mergeControlsHeight[report.empty() ? 0 : 1] =
+                measuredMergeControlsHeight;
         }
     }
     else if (operation == 1)
     {
-        RenderXmlCombo("##GroupXml", groupXmlIndex);
-        const float width =
-            (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        if (ImGui::Button("Refresh List##Group", ImVec2(width, 0.0f)))
-        {
-            RefreshXmlList();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Import Selected##Group", ImVec2(width, 0.0f)))
-        {
-            ImportGroup();
-        }
-
         if (!groupDocument.props.empty())
         {
+            const float width =
+                (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
             ImGui::Spacing();
             ImGui::Checkbox("Marquee Select", &marqueeMode);
             ImGui::SameLine();
             ImGui::Checkbox("Hide Grouped Decorations", &hideGrouped);
 
+            ImGui::Dummy(ImVec2(0.0f, 12.0f));
             ImGui::TextUnformatted("Visibility Distance:");
             ImGui::SameLine();
             ImGui::TextUnformatted("None");
@@ -1330,6 +1508,7 @@ void MergeExtractTab::Render()
             );
             ImGui::SameLine();
             ImGui::TextUnformatted("All");
+            ImGui::Dummy(ImVec2(0.0f, 12.0f));
 
             size_t selectedCount = 0;
             for (const Prop& prop : groupDocument.props)
@@ -1365,7 +1544,7 @@ void MergeExtractTab::Render()
             else
             {
                 ImGui::TextDisabled("Ungroup");
-                ImGui::BeginChild("##GroupList", ImVec2(0.0f, 150.0f), true);
+                ImGui::BeginChild("##GroupList", ImVec2(0.0f, 0.0f), true);
                 for (size_t index = 0; index < groups.size(); ++index)
                 {
                     const Group& group = groups[index];
@@ -1387,24 +1566,17 @@ void MergeExtractTab::Render()
     }
     else
     {
-        RenderXmlCombo("##ExtractXml", extractXmlIndex);
-        const float width =
-            (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        if (ImGui::Button("Refresh List##Extract", ImVec2(width, 0.0f)))
-        {
-            RefreshXmlList();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Import Selected##Extract", ImVec2(width, 0.0f)))
-        {
-            ImportExtract();
-        }
-
         if (!extractGroups.empty())
         {
             ImGui::Spacing();
             ImGui::Text("Decoration Groups");
-            ImGui::BeginChild("##ExtractGroups", ImVec2(0.0f, 170.0f), true);
+            const float extractListHeight = (std::max)(
+                100.0f,
+                ImGui::GetContentRegionAvail().y - extractControlsHeight);
+            ImGui::BeginChild(
+                "##ExtractGroups",
+                ImVec2(0.0f, extractListHeight),
+                true);
             for (Group& group : extractGroups)
             {
                 const std::string label = group.name + " (" +
@@ -1414,35 +1586,160 @@ void MergeExtractTab::Render()
             ImGui::EndChild();
         }
 
+        const float extractControlsStartY = ImGui::GetCursorPosY();
         ImGui::Dummy(ImVec2(0.0f, 16.0f));
-        RenderSectionHeading("Export");
-        if (!extractGroups.empty())
+        RenderSectionHeading("Extract / Copy");
+        const float width =
+            (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        const bool hasSelectedGroup = std::any_of(
+            extractGroups.begin(), extractGroups.end(),
+            [](const Group& group) { return group.selected; });
+        if (hasSelectedGroup)
         {
-            if (ImGui::Button("Extract Selected Groups")) ExportExtract();
+            if (PrimaryActionButton::Draw(
+                "Extract to XML",
+                ImVec2(width, 0.0f)))
+                ExportSelectedGroups(true);
+            ImGui::SameLine();
+            if (PrimaryActionButton::Draw(
+                "Copy to XML",
+                ImVec2(width, 0.0f)))
+                ExportSelectedGroups(false);
         }
         else
         {
-            RenderDisabledButton("Extract Selected Groups");
+            RenderDisabledButton("Extract to XML", ImVec2(width, 0.0f));
+            ImGui::SameLine();
+            RenderDisabledButton("Copy to XML", ImVec2(width, 0.0f));
         }
+
+        if (SharedXmlWorkspace::HasGroups())
+        {
+            ImGui::Spacing();
+            const ImVec4 deleteColor(0.68f, 0.12f, 0.12f, 1.0f);
+            const ImVec4 deleteHovered(0.82f, 0.18f, 0.18f, 1.0f);
+            const ImVec4 deleteActive(0.56f, 0.08f, 0.08f, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_Button, deleteColor);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, deleteHovered);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, deleteActive);
+            if (hasSelectedGroup)
+            {
+                if (ImGui::Button(
+                    "Delete Selected",
+                    ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)))
+                {
+                    ImGui::OpenPopup("Confirm Group Deletion");
+                }
+            }
+            else
+            {
+                RenderDisabledButton(
+                    "Delete Selected",
+                    ImVec2(ImGui::GetContentRegionAvail().x, 0.0f));
+            }
+            ImGui::PopStyleColor(3);
+
+            if (ImGui::BeginPopupModal(
+                "Confirm Group Deletion",
+                nullptr,
+                ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                size_t selectedGroups = 0;
+                size_t selectedDecorations = 0;
+                for (const Group& group : extractGroups)
+                {
+                    if (!group.selected) continue;
+                    ++selectedGroups;
+                    selectedDecorations += group.props.size();
+                }
+
+                ImGui::TextWrapped(
+                    "Are you sure you want to permanently delete %zu %s and %zu %s from %s?",
+                    selectedGroups,
+                    selectedGroups == 1 ? "group" : "groups",
+                    selectedDecorations,
+                    selectedDecorations == 1 ? "decoration" : "decorations",
+                    extractDocument.fileName.c_str());
+                ImGui::Spacing();
+                ImGui::TextDisabled(
+                    "A safety backup will be created before the XML is changed.");
+                ImGui::Spacing();
+
+                const float confirmationWidth = 130.0f;
+                ImGui::PushStyleColor(ImGuiCol_Button, deleteColor);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, deleteHovered);
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, deleteActive);
+                if (ImGui::Button(
+                    "Delete##ConfirmGroupDeletion",
+                    ImVec2(confirmationWidth, 0.0f)))
+                {
+                    DeleteSelectedGroups();
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::PopStyleColor(3);
+                ImGui::SameLine();
+                if (ImGui::Button(
+                    "Cancel##ConfirmGroupDeletion",
+                    ImVec2(confirmationWidth, 0.0f)))
+                {
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+        }
+
+        const float measuredExtractControlsHeight =
+            ImGui::GetCursorPosY() - extractControlsStartY;
+        if (!extractGroups.empty() && measuredExtractControlsHeight > 0.0f)
+            extractControlsHeight = measuredExtractControlsHeight;
     }
 
-    ImGui::Spacing();
-    ImGui::TextDisabled("%s", status.c_str());
+    StatusBar::PublishIfChanged(&status, status);
 }
 
 void MergeExtractTab::ClearImportedData()
 {
     ClearLoaded();
+    sharedPath.clear();
     baseXmlIndex = -1;
     extractXmlIndex = -1;
     groupXmlIndex = -1;
     additionalSelected.assign(availableXmlFiles.size(), false);
 }
 
+bool MergeExtractTab::ImportSharedPath(const std::string& path)
+{
+    ClearLoaded();
+    sharedPath = path;
+    XmlDocument document;
+    std::string error;
+    if (!LoadXml(path, document, error, false))
+    {
+        status = error;
+        sharedPath.clear();
+        return false;
+    }
+    groupDocument = document;
+    extractDocument = document;
+    groups = ParseGroups(groupDocument);
+    extractGroups = ParseGroups(extractDocument);
+    selectedFolderType = document.type;
+    RefreshXmlList();
+    additionalSelected.assign(availableXmlFiles.size(), false);
+    ClearGroupSelection(true);
+    DecorationCounterWindow::SetRequirements(
+        document.fileName,
+        document.type,
+        BuildRequirements({ document }));
+    status = "Using shared XML " + document.fileName + ".";
+    return true;
+}
+
 void MergeExtractTab::RenderOverlay()
 {
-    if (operation != 1 || groupDocument.props.empty() ||
-        !AppSettings::Get().windowVisible)
+    if (!toolActive || operation != 1 || groupDocument.props.empty() ||
+        !AppSettings::Get().windowVisible ||
+        !AppSettings::Get().showDecorationPoints)
     {
         hoveredGroupProp = -1;
         groupInputCaptured = false;
@@ -1641,8 +1938,22 @@ void MergeExtractTab::RenderOverlay()
     }
 }
 
+void MergeExtractTab::SetActive(bool active)
+{
+    if (toolActive == active) return;
+    toolActive = active;
+    if (active && !groupDocument.fileName.empty())
+    {
+        DecorationCounterWindow::SetRequirements(
+            groupDocument.fileName,
+            groupDocument.type,
+            BuildRequirements({ groupDocument }));
+    }
+}
+
 UINT MergeExtractTab::WndProc(HWND, UINT message, WPARAM, LPARAM lParam)
 {
+    if (!toolActive) return 1;
     if (operation != 1 || groupDocument.props.empty() ||
         !AppSettings::Get().windowVisible)
     {

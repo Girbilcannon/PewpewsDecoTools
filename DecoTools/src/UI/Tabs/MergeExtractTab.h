@@ -5,11 +5,14 @@
 #pragma once
 
 #include <Windows.h>
+#include <string>
 
 namespace MergeExtractTab
 {
     void Render();
     void RenderOverlay();
+    bool ImportSharedPath(const std::string& path);
+    void SetActive(bool active);
     void ClearImportedData();
     UINT WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 }

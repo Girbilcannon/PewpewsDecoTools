@@ -1478,7 +1478,7 @@ namespace
         file << "  \"Version\": 2,\n";
         file << "  \"GeneratedAtUtc\": \""
             << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ") << "\",\n";
-        file << "  \"GeneratedBy\": \"Pewpew's Deco Tools 1.3.3.8\",\n";
+        file << "  \"GeneratedBy\": \"Pewpew's Deco Tools 1.4.2.2\",\n";
         file << "  \"SourceSnapshot\": {\n";
         file << "    \"GuildUpgradeIds\": [";
         size_t written = 0;
@@ -1578,12 +1578,18 @@ namespace
             if (found == activeEntries.end())
             {
                 activeEntries.push_back(
-                    { definition.name, definition.id, -1, definition.maxCount }
+                    {
+                        CleanDatabaseName(definition.name),
+                        definition.id,
+                        -1,
+                        definition.maxCount
+                    }
                 );
             }
             else
             {
-                if (!definition.name.empty()) found->name = definition.name;
+                const std::string cleanName = CleanDatabaseName(definition.name);
+                if (!cleanName.empty()) found->name = cleanName;
                 found->maxCount = definition.maxCount;
             }
         }

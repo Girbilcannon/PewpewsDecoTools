@@ -1,20 +1,22 @@
-// Pewpew's Deco Tools - Interactive Layout Group Mover
+// Pewpew's Deco Tools - Move Tool XML Groups implementation
 // Imports decoration XML layouts, visualizes their bounds and decoration points
 // in-game, supports interactive positioning, and exports relocated layouts.
 
-#include "GroupMoverTab.h"
+#include "MoveToolGroups.h"
 
-#include "../../Core/AppRuntime.h"
-#include "../../Core/AppSettings.h"
-#include "../../Core/DecorationDatabase.h"
-#include "../../Core/GroupBackupDatabase.h"
-#include "../../Core/Utf8Paths.h"
-#include "../../Core/XmlFileUtils.h"
-#include "../DecorationCounterWindow.h"
-#include "../ManipulatorUtils.h"
-#include "../XmlComboHelpers.h"
-#include "../../imgui/imgui.h"
-#include "../../imgui/imgui_internal.h"
+#include "../Core/AppRuntime.h"
+#include "../Core/AppSettings.h"
+#include "../Core/DecorationDatabase.h"
+#include "../Core/GroupBackupDatabase.h"
+#include "../Core/Utf8Paths.h"
+#include "../Core/XmlFileUtils.h"
+#include "DecorationCounterWindow.h"
+#include "PrimaryActionButton.h"
+#include "StatusBar.h"
+#include "ManipulatorUtils.h"
+#include "XmlComboHelpers.h"
+#include "../imgui/imgui.h"
+#include "../imgui/imgui_internal.h"
 
 #include <algorithm>
 #include <array>
@@ -119,6 +121,7 @@ namespace
     std::string importedPath;
     std::string importedFileName;
     std::string status = "No XML imported";
+    float groupMoveControlsHeight = 190.0f;
     std::vector<PropPosition> props;
     std::vector<GroupInfo> groups;
     std::vector<XmlFileEntry> availableXmlFiles;
@@ -1245,20 +1248,24 @@ namespace
         RefreshXmlList();
     }
 
-    bool ImportXml(const std::string& path, bool preserveTransformHistory = false)
+    bool ImportXml(const std::string& path, bool preserveTransformHistory = false,
+        bool prepareGroupRestore = true)
     {
-        const GroupBackupDatabase::ImportResult groupRestore =
-            GroupBackupDatabase::PrepareImport(
-            path,
-            -1,
-            AppSettings::Get().automaticGroupBackupRestore,
-            AppSettings::Get().backupUngroupedXmls
-        );
-        if (groupRestore.action == GroupBackupDatabase::ImportAction::NeedsUserChoice ||
-            groupRestore.action == GroupBackupDatabase::ImportAction::Error)
+        if (prepareGroupRestore)
         {
-            status = groupRestore.message;
-            return false;
+            const GroupBackupDatabase::ImportResult groupRestore =
+                GroupBackupDatabase::PrepareImport(
+                path,
+                -1,
+                AppSettings::Get().automaticGroupBackupRestore,
+                AppSettings::Get().backupUngroupedXmls
+            );
+            if (groupRestore.action == GroupBackupDatabase::ImportAction::NeedsUserChoice ||
+                groupRestore.action == GroupBackupDatabase::ImportAction::Error)
+            {
+                status = groupRestore.message;
+                return false;
+            }
         }
         std::ifstream file(Utf8Paths::FromUtf8(path), std::ios::binary);
         if (!file.is_open())
@@ -1809,7 +1816,7 @@ namespace
                 maximum.z = (std::max)(maximum.z, prop.position.z);
             }
 
-            if (prop.groupIndex >= 0)
+            if (prop.groupIndex >= 0 && settings.showDecorationPoints)
             {
                 ImVec2 point;
                 if (camera.Project(DecorationToWorld(prop.position), viewport, point))
@@ -2321,16 +2328,22 @@ namespace
     }
 }
 
-void GroupMoverTab::RenderWorkspace()
+void MoveToolGroups::RenderWorkspace()
 {
         if (!groups.empty())
         {
             ImGui::Dummy(ImVec2(0.0f, 16.0f));
             RenderSectionHeading("Select Groups");
             ImGui::TextDisabled(
-                "Select groups here, or click any orange group point in the scene."
+                "Select groups here, or click any orange group point in the layout."
             );
-            ImGui::BeginChild("##GroupMoverGroupList", ImVec2(0.0f, 170.0f), true);
+            const float groupListHeight = (std::max)(
+                100.0f,
+                ImGui::GetContentRegionAvail().y - groupMoveControlsHeight);
+            ImGui::BeginChild(
+                "##GroupMoverGroupList",
+                ImVec2(0.0f, groupListHeight),
+                true);
             for (size_t index = 0; index < groups.size(); ++index)
             {
                 GroupInfo& group = groups[index];
@@ -2347,6 +2360,7 @@ void GroupMoverTab::RenderWorkspace()
             ImGui::EndChild();
         }
 
+        const float controlsStartY = ImGui::GetCursorPosY();
         const bool hasSelectedGroups = SelectedPropCount() > 0;
         ImGui::Dummy(ImVec2(0.0f, 16.0f));
         RenderSectionHeading("Group Move");
@@ -2486,7 +2500,7 @@ void GroupMoverTab::RenderWorkspace()
         ImGui::SameLine();
         if (!props.empty())
         {
-            if (ImGui::Button(
+            if (PrimaryActionButton::Draw(
                 "Apply to XML",
                 ImVec2(historyButtonWidth, 0.0f)
             ))
@@ -2501,20 +2515,38 @@ void GroupMoverTab::RenderWorkspace()
                 ImVec2(historyButtonWidth, 0.0f)
             );
         }
-        ImGui::Spacing();
-        ImGui::TextDisabled("%s", status.c_str());
+        const float measuredControlsHeight =
+            ImGui::GetCursorPosY() - controlsStartY;
+        if (!groups.empty() && measuredControlsHeight > 0.0f)
+            groupMoveControlsHeight = measuredControlsHeight;
+        StatusBar::PublishIfChanged(&status, status);
 }
 
-bool GroupMoverTab::ImportPath(const std::string& path)
+bool MoveToolGroups::ImportPath(const std::string& path, bool prepareGroupRestore)
 {
-    return ImportXml(path);
+    return ImportXml(path, false, prepareGroupRestore);
 }
 
-void GroupMoverTab::Render()
+void MoveToolGroups::RefreshCounter()
 {
-    RenderWorkspace();
+    std::map<int, DecorationCounterWindow::Requirement> countById;
+    for (const PropPosition& prop : props)
+    {
+        auto& item = countById[prop.id];
+        item.id = prop.id;
+        item.name = prop.name;
+        ++item.required;
+    }
+    std::vector<DecorationCounterWindow::Requirement> counterItems;
+    for (const auto& [id, item] : countById)
+    {
+        static_cast<void>(id);
+        counterItems.push_back(item);
+    }
+    DecorationCounterWindow::SetRequirements(importedFileName, xmlType, counterItems);
 }
-void GroupMoverTab::RenderOverlay()
+
+void MoveToolGroups::RenderOverlay()
 {
     if (props.empty())
     {
@@ -2556,7 +2588,7 @@ void GroupMoverTab::RenderOverlay()
     }
 }
 
-void GroupMoverTab::ClearImportedData()
+void MoveToolGroups::ClearImportedData()
 {
     DecorationCounterWindow::Clear();
     std::string().swap(xmlSource);
@@ -2595,7 +2627,7 @@ void GroupMoverTab::ClearImportedData()
     ClearTransformHistory();
 }
 
-UINT GroupMoverTab::WndProc(HWND, UINT message, WPARAM, LPARAM lParam)
+UINT MoveToolGroups::WndProc(HWND, UINT message, WPARAM, LPARAM lParam)
 {
     switch (message)
     {

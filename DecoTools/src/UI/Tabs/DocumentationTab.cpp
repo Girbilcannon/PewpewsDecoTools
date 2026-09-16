@@ -10,16 +10,16 @@ namespace
 {
     enum class DocumentationPage
     {
+        SharedImport,
+        GroupTools,
         MoveTool,
         Patterns,
         MapSwap,
-        GroupTools,
         GroupBackupRestore,
-        GroupMover,
         Settings
     };
 
-    DocumentationPage currentPage = DocumentationPage::MoveTool;
+    DocumentationPage currentPage = DocumentationPage::SharedImport;
 
     struct PageChoice
     {
@@ -29,12 +29,12 @@ namespace
 
     constexpr PageChoice PageChoices[] =
     {
+        { DocumentationPage::SharedImport, "Import & Workflow" },
+        { DocumentationPage::GroupTools, "Group Tools" },
         { DocumentationPage::MoveTool, "Move Tool" },
         { DocumentationPage::Patterns, "Patterns" },
         { DocumentationPage::MapSwap, "Map Swap" },
-        { DocumentationPage::GroupTools, "Group Tools" },
         { DocumentationPage::GroupBackupRestore, "Group Backup/Restore" },
-        { DocumentationPage::GroupMover, "Group Mover" },
         { DocumentationPage::Settings, "Settings" }
     };
 
@@ -50,7 +50,7 @@ namespace
                 return choice.label;
             }
         }
-        return "Move Tool";
+        return "Import & Workflow";
     }
 
     void RenderPageTitle(const char* text)
@@ -124,11 +124,47 @@ namespace
         ImGui::Dummy(ImVec2(0.0f, 7.0f));
     }
 
+    void RenderSharedImportPage()
+    {
+        RenderPageTitle("Import & Shared Workflow");
+        RenderParagraph(
+            "Version 1.4 uses one shared working XML across the complete addon. Import once at the top of the main window, switch freely between tools, and continue working without refreshing and importing the same file again."
+        );
+
+        RenderSectionHeading("Importing an XML");
+        RenderStep(1, "Choose Homestead or Guild Hall",
+            "Use the centered switch at the top of the addon. The selected side determines which default XML folder is shown. Folder paths can be changed in Settings.");
+        RenderStep(2, "Choose the working XML",
+            "Open the XML list and select a file. The closed list remains compact, while the open list expands far enough to show long and indexed filenames. Use Refresh List after saving a new XML from Guild Wars 2.");
+        RenderStep(3, "Import Selected",
+            "The selected file becomes the shared working XML for Move Tool, Patterns, Map Swap, Group Tools, and Group Backup/Restore. Switching tools does not unload it or create another import backup.");
+
+        RenderSectionHeading("Automatic Working Mode");
+        RenderBullet("Full XML",
+            "Selected automatically when the imported file contains no named groups. Tools operate on the complete decoration layout and generally create a new indexed output file.");
+        RenderBullet("XML Groups",
+            "Selected automatically when at least one named group is detected. Tools expose their group-selection workflow and apply group changes directly to the current XML.");
+        RenderNote(
+            "There is no manual Full XML / XML Groups switch. Creating the first group changes every tool to XML Groups mode. Ungrouping, extracting, or deleting the final group changes every tool back to Full XML mode."
+        );
+
+        RenderSectionHeading("Continuing Between Tools");
+        RenderParagraph(
+            "After Apply, Merge, Group, Extract, Delete Selected, or another direct XML operation succeeds, every tool reloads the updated shared file. When a Full XML operation creates an indexed output such as _MOVED#, _PATTERN#, _MERGED#, or a map-swapped XML, that successful output becomes the new shared working XML automatically."
+        );
+        RenderBullet("Direct changes",
+            "Group-mode Apply operations modify the current XML. Reload that file in Guild Wars 2 to see the result.");
+        RenderBullet("Indexed exports",
+            "Full XML operations preserve the source and create a new numbered file. Deco Tools continues working from the newly created output.");
+        RenderBullet("Failure protection",
+            "XML replacements use a temporary file. A failed write leaves the original XML unchanged, and the shared workspace changes only after a successful output can be read back.");
+    }
+
     void RenderMoveToolPage()
     {
         RenderPageTitle("Move Tool");
         RenderParagraph(
-            "Move Tool provides one location for repositioning either an entire XML layout or selected XML groups. Choose the source mode that matches what you need to move, then use the corresponding workflow below."
+            "Move Tool repositions either the complete shared XML or selected named groups. Its source mode is detected automatically from the XML imported at the top of the addon."
         );
 
         RenderSectionHeading("Move Source");
@@ -137,30 +173,30 @@ namespace
         RenderBullet("XML Groups",
             "Provides the complete former Group Mover workflow inside Move Tool. It displays named groups, permits one or multiple group selections, and applies changes directly to the imported XML.");
         RenderNote(
-            "XML Groups was consolidated into Move Tool because both workflows perform the same fundamental move and rotation operations. See the separate Group Mover documentation page for its complete selection, movement, rotation, Undo/Redo, and Apply instructions."
+            "The former Group Mover is fully consolidated here. There is no separate Group Mover tool or documentation section, and mode selection is automatic."
         );
 
-        RenderSectionHeading("How to Use Full XML");
-        RenderStep(1, "Choose your source type: Homestead or Guild Hall",
-            "This determines which default game folder the tool uses for importing and exporting. Default folders can be verified or changed in Settings.");
-        RenderStep(2, "Save what you are working on in-game",
-            "The tool reads XML files that are already saved. It is good practice to save the layout you are working on under a new name so that you never lose the original.");
-        RenderStep(3, "Refresh - Select - Import",
-            "Refresh the list to show your new save, choose the file from the dropdown, and press Import Selected to load it into the tool.");
-        RenderStep(4, "Move",
+        RenderSectionHeading("How to Use");
+        RenderStep(1, "Import the shared XML",
+            "Use the import area at the top of the addon. See Import & Workflow for the common process and automatic mode rules.");
+        RenderStep(2, "Select groups when available",
+            "In XML Groups mode, choose one or several groups from the list or by clicking their orange layout points. Selected groups turn blue. Full XML mode skips this step.");
+        RenderStep(3, "Move",
             "The Move operation lets you reposition the layout in world X, Y, and Z with the manipulator handles. Drag a colored axis handle to move along only that axis, or drag the gray center box to move freely across the current camera view. The handles retain a consistent on-screen size as the camera moves closer or farther away. The manipulator is placed at the average center of all decorations and at their lowest point, which is usually ground level and easier to locate. If you are unsure where the manipulator is, move your character anywhere on the map and click Move to Character to bring every decoration point to your location.");
-        RenderStep(5, "Rotate",
+        RenderStep(4, "Rotate",
             "The Rotate operation uses advanced group-rotation math while providing three simple rings that rotate the layout around whichever local axis you choose. The rings retain a consistent on-screen size as the camera moves closer or farther away.");
-        RenderStep(6, "Export",
-            "When the position is complete, click Export Updated XML. The file is saved to the default location and can be loaded in-game to view the result. Files exported from this tool use the suffix _MOVED#.xml, with the number automatically indexed for each new save.");
+        RenderStep(5, "Export or Apply",
+            "Full XML uses Export Updated XML and creates an indexed _MOVED#.xml file, which becomes the new shared working XML. XML Groups uses Undo, Redo, and Apply to XML; Apply writes the selected-group result directly to the current file without clearing the session history.");
 
-        RenderSectionHeading("Other Options");
-        RenderBullet("Bounding Box",
-            "Displays a wireframe box surrounding all decoration points in the imported file.");
-        RenderBullet("Solid Faces",
-            "Fills the bounding box to make the complete area easier to see. Leaving solid faces off while actively working is generally recommended.");
-        RenderBullet("Decoration Points",
-            "Displays each decoration's actual anchor point. When decorations are spread across a very large area, fewer distant points may be visible. Point size can be adjusted here, and that size is shared by every tool.");
+        RenderSectionHeading("Moving XML Groups");
+        RenderBullet("Group selection",
+            "Select one or several named groups with the checkboxes or by clicking their orange layout points. Selected groups turn blue. The manipulator anchor is averaged across every selected group.");
+        RenderBullet("Move and Rotate",
+            "Move changes the selected groups' world position; Rotate turns their complete construction around the shared averaged anchor using the same advanced XYZ rotation math as Full XML.");
+        RenderBullet("Undo and Redo",
+            "The XML Groups session retains as many as 100 completed move and rotation operations. Apply to XML does not clear that history, so you can step back through earlier changes and apply the restored state again.");
+        RenderBullet("Apply to XML",
+            "Writes the selected groups directly into the shared XML instead of creating another file. Importing a different XML or changing the relevant group source starts a new history; simply switching tools does not require another import.");
 
         RenderSectionHeading("Best Use Cases");
         RenderParagraph(
@@ -176,20 +212,20 @@ namespace
         );
 
         RenderSectionHeading("How to Use");
-        RenderStep(1, "Import",
-            "Select and import the XML you are currently working on. For more information about importing, see the first three steps in the Move Tool documentation.");
+        RenderStep(1, "Import the shared XML",
+            "Use the import area at the top of the addon. Patterns automatically follows the Full XML or XML Groups mode detected from that file.");
 
-        RenderStep(2, "Choose the pattern source", "");
+        RenderStep(2, "Confirm the automatic pattern source", "");
         RenderBullet("Full XML",
-            "Uses the complete imported layout as one pattern unit and retains the indexed _PATTERN#.xml export workflow.", 18.0f);
+            "When no groups exist, the complete imported layout becomes one pattern unit and uses the indexed _PATTERN#.xml export workflow.", 18.0f);
         RenderBullet("XML Groups",
-            "Displays only decorations contained in named XML groups. Select exactly one group from the list or by clicking any of its scene points. Ungrouped decorations remain safely in the file but are hidden from this workspace.", 18.0f);
+            "When groups exist, Patterns displays only named groups. Select exactly one group from the list or by clicking any orange point belonging to it. The selected group turns blue; other groups remain orange. Ungrouped decorations stay safely in the file but are not shown.", 18.0f);
 
         RenderStep(3, "Choose a pattern type", "");
         RenderBullet("Line",
             "Creates a straight line by repeating the imported decorations across a fixed Total Offset XYZ. Changing Copies redistributes the instances evenly without moving the outer endpoint. From Center creates the selected number of copies on both sides of the original while preserving both outer endpoints.", 18.0f);
         RenderBullet("Circle",
-            "Creates a circular pattern with 2 to 72 total instances. Sweep ranges continuously from 1 to 1080 degrees and can be entered precisely in the numeric field or adjusted with the adjacent slider. Visual marks at 360, 720, and 1080 degrees support builds covering as many as three revolutions. Pattern Count defaults to 6 and Sweep defaults to 360 degrees. Sweep and Total Vertical Offset define fixed first and last points, so changing Pattern Count only redistributes instances between them. A flat 360-degree circle remains a closed loop without an overlapping final copy.", 18.0f);
+            "Creates a circular pattern with 2 to 72 total instances. Pattern Count defaults to 6. Sweep defaults to 360 degrees and ranges continuously from 1 to 1080; enter an exact value in the numeric field or use the marked slider. Sweep and Total Vertical Offset establish fixed first and last points, so changing Pattern Count fills the path without changing its endpoint or final height. A flat 360-degree circle remains closed without placing the final copy over the original. Keep Orientation is off by default so replicas follow the circle; enable it to preserve the source orientation around the path.", 18.0f);
         RenderBullet("Square",
             "Creates a two-dimensional repeating grid with different vertical-offset styles for three-dimensional effects:", 18.0f);
         RenderBullet("Corner", "Builds a diagonal ramp from corner to corner.", 42.0f);
@@ -212,13 +248,13 @@ namespace
         RenderStep(5, "Control spacing and offsets",
             "Each pattern type provides a second gray manipulator for changing spacing and offsets. Its gray center box can adjust multiple supported directions together relative to the camera view, while its arrows remain single-axis controls. Line uses a total XYZ offset to its outer endpoint, while Circle uses radius and the total vertical difference between its first and last instances. These adjustments preserve the colored source handle's current position, including after Pattern Rotate. The gray offset manipulator is not available during the Pattern Rotate operation.");
         RenderStep(6, "Export or Apply",
-            "Full XML exports a new file using the automatically indexed _PATTERN#.xml suffix. XML Groups uses Apply to XML instead: the original instance remains in its existing group, and every generated replica becomes a separate adjacent group named Original Group (Copy 1), Original Group (Copy 2), and so on. Existing copy names are skipped automatically. Every other group and every ungrouped decoration remains untouched.");
+            "Full XML exports a new indexed _PATTERN#.xml file and promotes it to the shared workspace. XML Groups uses Apply to XML instead: the original instance remains in its existing group, and every generated replica becomes a separate adjacent group named Original Group (Copy 1), Original Group (Copy 2), and so on. Existing copy names are skipped automatically. Every other group and every ungrouped decoration remains untouched.");
         RenderStep(7, "Undo and Redo",
             "XML Groups retains as many as 100 pattern-setting, move, and rotation changes during the current selected-group session. Apply to XML does not clear the history, so an earlier result can be restored and applied again.");
 
         RenderSectionHeading("Common Practices");
         RenderParagraph(
-            "Full XML remains useful for creating a separate reusable pattern that can be merged into another build. XML Groups is faster when the source pieces already exist inside a complete workspace: create a named group in Group Tools, pattern that group in place, apply it, and reload the same XML in-game."
+            "Full XML remains useful for creating a separate reusable pattern that can be merged into another build. XML Groups is faster when the source pieces already exist inside a complete workspace: create a named group in Group Tools, switch to Patterns without importing again, pattern that group in place, apply it, and reload the same XML in-game."
         );
     }
 
@@ -233,8 +269,8 @@ namespace
         );
 
         RenderSectionHeading("How to Use");
-        RenderStep(1, "Import",
-            "Select and import the XML you are currently working on. For more information about importing, see the first three steps in the Move Tool documentation.");
+        RenderStep(1, "Import the source XML",
+            "Use the shared import area at the top of the addon, then open Map Swap. The globally imported XML is already loaded as the source.");
         RenderStep(2, "Choose a Homestead destination",
             "If you choose Hearth's Glow or Comosus Isle, simply select the destination and run Pre-Check.");
         RenderStep(3, "Choose a Guild Hall destination",
@@ -244,11 +280,11 @@ namespace
         RenderStep(5, "Run Pre-Check",
             "Pre-Check counts decorations in the Decoration Counter and reports what can or cannot be placed at the destination, excluding impossible items. It also provides other important transfer information before export.");
         RenderStep(6, "Swap and Export",
-            "Click Swap and Export to create a new XML with the same base title and the suffix _Map-Name.xml. Decorations created on the current map will then load correctly on the destination map, regardless of map type.");
+            "Click Swap Maps and Export to create a new XML with the same base title and the destination map suffix. Decorations created on the source map will then load correctly on the destination map, regardless of map type. A successful output becomes the new shared working XML and updates the global Homestead or Guild Hall folder selection to match.");
 
         RenderSectionHeading("Common Uses");
         RenderParagraph(
-            "Map Swap is ideal when changing Homesteads or Guild Halls without losing completed work. It can also convert a Guild Hall build to a Homestead, or the reverse, when corresponding decorations exist. Move, grouping, and Group Mover operations can be used afterward to refine the converted layout."
+            "Map Swap is ideal when changing Homesteads or Guild Halls without losing completed work. It can also convert a Guild Hall build to a Homestead, or the reverse, when corresponding decorations exist. After export, switch directly to Move Tool, Patterns, or Group Tools to continue refining the converted layout without importing it again."
         );
     }
 
@@ -256,71 +292,55 @@ namespace
     {
         RenderPageTitle("Group Tools");
         RenderParagraph(
-            "Group Tools brings multiple XML files together, creates groups from multiple decorations within one XML, and extracts groups into separate files for safe reuse elsewhere."
+            "Group Tools organizes the shared working XML. Group creates named sections, Merge adds other XML files to the current layout, and Extract can copy, remove, or permanently delete selected groups."
         );
 
-        RenderSectionHeading("How to Use");
-        RenderStep(1, "Choose an operation", "Select Merge, Group, or Extract according to the workflow you need.");
+        RenderSectionHeading("Shared Source");
+        RenderParagraph(
+            "Import the working XML once at the top of the addon. It is automatically used as the current XML and the Merge base layout. Group is the first and default operation."
+        );
 
-        RenderBullet("Merge Operation", "");
-        RenderSubStep(1, "Refresh the list so the most up-to-date XML files are displayed.");
-        RenderSubStep(2, "Choose the Base Layout, which becomes the central XML that everything else merges into.");
-        RenderSubStep(3, "Select each additional XML file you want to merge.");
-        RenderSubStep(4, "Click Prepare Merge.");
-        RenderSubStep(5, "Review the merge details, including the final decoration count.");
-        RenderSubStep(6, "Check the Decoration Counter. If needed, click the addon menu icon twice to close and reopen both windows without losing your place. Red entries indicate decorations you do not have in sufficient quantities when a valid API key is available. The merge can still be completed regardless of count warnings.");
-        RenderSubStep(7, "Click Merge and Export. The new _MERGED#.xml file will be ready to load in-game, and each XML added to the merge will already have its own subgroup.");
+        RenderSectionHeading("Group Decorations");
+        RenderStep(1, "Select decorations",
+            "Ungrouped decorations appear as orange layout points. Left-click to select and right-click to deselect. Enable Marquee Select to drag over several points at once; selected points turn blue.");
+        RenderStep(2, "Control layout visibility",
+            "Lower Visibility Distance when a large layout makes selection crowded. Hide Grouped Decorations removes already organized gray points from the view.");
+        RenderStep(3, "Create the group",
+            "Enter a unique group name and click Create Group. The current XML is rewritten directly, and creating its first group automatically switches the entire addon to XML Groups mode.");
+        RenderStep(4, "Ungroup when needed",
+            "Click the X beside a group to remove its heading and return its decorations to the ungrouped section. The final group can also be removed; doing so switches every tool back to Full XML mode.");
 
-        ImGui::Dummy(ImVec2(0.0f, 8.0f));
-        RenderBullet("Group Operation", "");
-        RenderSubStep(1, "Refresh the XML list and import the current working XML. Save the in-game layout under the name you want before importing it.");
-        RenderSubStep(2, "Orange points appear throughout the map. Left-click a point to select it and right-click it to deselect it.");
-        RenderSubStep(3, "Enable Marquee Select to click and drag a box around multiple decorations. Disable it again when the selection is complete.");
-        RenderSubStep(4, "If the map becomes too crowded, lower Visibility Distance to hide decoration points that are farther away.");
-        RenderSubStep(5, "After selecting the desired decorations, enter a group name and click Create Group.");
-        RenderSubStep(6, "Grouped decoration points turn gray and the group is added to the list. Hide Grouped Decorations can hide those gray points, and the X beside a group name removes that group and returns its points to orange.");
-        RenderSubStep(7, "There is no export button. The Group operation directly reorganizes the imported XML so its groups remain neatly stacked inside the same file.");
-        RenderSubStep(8, "Ungroup can remove every group, including the final remaining group. Its decorations return to their original prop-line order without comment headings.");
+        RenderSectionHeading("Merge XML Files");
+        RenderStep(1, "Select additional XML files",
+            "The shared working XML is already the Base Layout. Check every other XML you want to add. Use Refresh List if a newly saved file does not appear.");
+        RenderStep(2, "Prepare Merge",
+            "Run the pre-check and review map compatibility, final decoration totals, and the Decoration Counter before continuing.");
+        RenderStep(3, "Merge",
+            "In Full XML mode, Merge and Export creates an indexed _MERGED#.xml and makes it the new shared working file. In XML Groups mode, Merge applies directly to the current XML.");
+        RenderBullet("Named incoming groups",
+            "Remain separate groups. Duplicate names receive a deterministic numbered suffix so every group stays selectable.", 18.0f);
+        RenderBullet("Incoming ungrouped decorations",
+            "Remain in the ungrouped section and are never forced into an artificial group.", 18.0f);
+        RenderBullet("Complete prop data",
+            "Is copied exactly, including extended payloads used by special decorations such as grave markers and Café props.", 18.0f);
 
-        ImGui::Dummy(ImVec2(0.0f, 8.0f));
-        RenderBullet("Extract Operation", "");
-        RenderSubStep(1, "Refresh and import an XML containing previously created groups.");
-        RenderSubStep(2, "Select every group you want to extract from the current file.");
-        RenderSubStep(3, "Click Extract to export the selected groups.");
-        RenderSubStep(4, "Each extracted file is named Group_Name_EXTRACTED.xml.");
-        RenderSubStep(5, "A second file uses the original name with the suffix _STRIPPED.xml. It contains the imported XML with every selected group's decorations completely removed.");
+        RenderSectionHeading("Extract Groups");
+        RenderStep(1, "Select groups",
+            "Choose one or several named groups from the list. Extract is available only when the shared XML contains groups.");
+        RenderStep(2, "Choose the result", "");
+        RenderBullet("Extract to XML",
+            "Creates one indexed Group Name_EXTRACTED#.xml for each selected group, then removes those groups and their decorations from the current XML.", 18.0f);
+        RenderBullet("Copy to XML",
+            "Creates the same individual extracted XML files but leaves the current XML completely unchanged.", 18.0f);
+        RenderBullet("Delete Selected",
+            "The red group-mode-only button deletes the selected groups and every decoration inside them from the current XML without creating extracted files. A Safety backup is required and created before deletion.", 18.0f);
+        RenderNote(
+            "Extract no longer creates a separate _STRIPPED# file. Removing or deleting the final group updates the shared workspace to Full XML mode."
+        );
 
         RenderSectionHeading("More Info");
         RenderParagraph(
-            "This is one of the addon's most important toolsets. Although in-game saving removes XML group comments, building first and merging later creates a much more organized workflow and makes future operations faster. It is especially valuable when sharing individual designs from a larger layout: Group and Extract can isolate the needed decorations without manually sorting through hundreds or thousands of entries, while preserving the original layout."
-        );
-    }
-
-    void RenderGroupMoverPage()
-    {
-        RenderPageTitle("Group Mover");
-        RenderParagraph(
-            "The complete Group Mover workflow can now be found under Move Tool -> XML Groups. It was consolidated into Move Tool because moving a complete XML and moving selected groups use the same fundamental operations, while the source mode determines what is affected and how the result is saved. This documentation remains separate to help existing users transition without losing the familiar Group Mover instructions."
-        );
-        RenderNote(
-            "Open Move Tool and select XML Groups to use the functionality described on this page."
-        );
-
-        RenderSectionHeading("How to Use");
-        RenderStep(1, "Refresh and import an XML",
-            "The XML must contain embedded groups created through Group Tools.");
-        RenderStep(2, "Select a group",
-            "Click one of the group's decoration points in the scene or select it from the group list.");
-        RenderStep(3, "Use Move or Rotate",
-            "Change the complete position or orientation of the selected group. Selecting multiple groups moves or rotates them together around an anchor averaged between those groups.");
-        RenderStep(4, "Undo and Redo",
-            "Undo and Redo step backward or forward through as many as 100 move and rotation operations in the current XML Groups session. Applying changes does not clear this history, so you can undo earlier adjustments and apply the restored state again. Importing another XML, switching source modes, or leaving Move Tool starts a new history.");
-        RenderStep(5, "Apply to the XML",
-            "Like the Group operation in Group Tools, Group Mover does not create a separate exported XML. This reduces file clutter during small adjustments and makes checking changes faster. After moving and applying, reload the XML in-game to view the result.");
-
-        RenderSectionHeading("Common Uses");
-        RenderParagraph(
-            "Group Mover becomes exceptionally fast once you are familiar with the grouping workflows in Group Tools. Because organized sections can be adjusted directly inside a complete build, it may become one of the tools you use most often."
+            "Guild Wars 2 removes group comments whenever it saves a layout. Deco Tools automatically backs up eligible imports and outputs so those groups can be restored later. Grouping a build also unlocks the fastest Move Tool and Patterns workflows because every tool immediately sees the same named sections."
         );
     }
 
@@ -333,7 +353,7 @@ namespace
 
         RenderSectionHeading("Automatic Backup and Restore");
         RenderBullet("Automatic backup",
-            "When enabled in Settings, importing an XML containing named groups immediately records a complete restore point. Every successful Apply or Export that produces grouped XML also records one. These backups always include both grouped and ungrouped decorations. Repeated imports of the same unchanged file are deduplicated. The most recent 20 automatic restore points are retained for each XML lineage; manual and safety restore points are never removed by that limit.");
+            "When enabled in Settings, the one shared import records a complete restore point for an XML containing named groups. Successful grouped Apply, Export, Merge, Group, Extract, Copy, and other qualifying outputs also create restore points. These backups include grouped and ungrouped decorations. Repeated unchanged files are deduplicated. The most recent 20 automatic points are retained for each XML lineage; Manual and Safety points are never removed by that limit.");
         RenderBullet("Backup Ungrouped XMLs",
             "This separate option is disabled by default and applies only to automatic backups. When enabled, imports and successful outputs containing decorations but no named groups also receive complete-XML rebuild backups. The first import of a new groupless filename receives a lightweight confirmation asking whether it should be treated as new. Zero-group backups are available in Rebuild XML but are excluded from Restore Groups because they contain no group membership.");
         RenderBullet("Automatic restore",
@@ -345,8 +365,8 @@ namespace
         );
 
         RenderSectionHeading("Manual Backup");
-        RenderStep(1, "Import a grouped XML",
-            "Choose Homestead or Guild Hall, refresh the list, select the XML, and click Import Selected.");
+        RenderStep(1, "Import the XML to protect",
+            "Use the shared importer at the top of the addon, then open Group Backup/Restore. The current working XML is already available to the manual backup controls.");
         RenderStep(2, "Add an optional name",
             "A custom name makes important milestones easier to identify. If left blank, the restore point uses the XML filename.");
         RenderStep(3, "Create the backup",
@@ -354,7 +374,7 @@ namespace
 
         RenderSectionHeading("Manual Restore");
         RenderStep(1, "Import the target XML",
-            "The target is the file whose groups should be rebuilt. Homestead restore points cannot be applied to Guild Hall XMLs, or the reverse.");
+            "Use the shared importer to select the file whose groups should be rebuilt. Homestead restore points cannot be applied to Guild Hall XMLs, or the reverse.");
         RenderStep(2, "Choose a restore source",
             "Use the category dropdown to show All Restore Options, Saved XMLs, Automatic Backups, Manual Backups, or Safety Backups. Choose the specific source from the visible scrollable list below it. Saved XMLs containing groups are read from the configured folder and listed newest first. Database restore points show their custom name or XML filename, persistent type, timestamp, and group count.");
         RenderStep(3, "Review the preview",
@@ -392,14 +412,14 @@ namespace
         RenderParagraph(
             "Create an API key from your Guild Wars 2 account on the official website. The key should include at least the following permissions:"
         );
-        RenderBullet("Progression", "");
         RenderBullet("Guilds", "");
         RenderBullet("Account", "");
+        RenderBullet("Inventories", "");
         RenderBullet("Unlocks", "");
 
         RenderSectionHeading("Default XML Folders");
         RenderParagraph(
-            "For security purposes, these fields do not use a manual browse dialog. If the default in-game XML folders are incorrect, copy and paste the correct folder paths into the Homestead and Guild Hall fields. Enable Show XMLs from Sub-Folders to include XML files stored inside folders beneath those default locations in each import dropdown."
+            "For security purposes, these fields do not use a manual browse dialog. If the default in-game XML folders are incorrect, copy and paste the correct paths into the Homestead and Guild Hall fields. The switch in the shared import area changes between these two folders. Enable Show XMLs from Sub-Folders to include files stored in folders beneath the selected location."
         );
 
         RenderSectionHeading("Local Data");
@@ -408,11 +428,23 @@ namespace
         RenderBullet("Remember addon window state",
             "Remembers the addon's window state and tool options between sessions.");
         RenderBullet("Show decoration count window",
-            "Shows or hides the Decoration Counter, which is especially useful for merging, map swapping, and pattern creation. The window can also be reopened by clicking the addon icon in the game menu bar twice to turn the addon windows off and back on without changing the active tool state.");
+            "Shows or hides the Decoration Counter, which follows the current tool result. Red rows indicate that Required is greater than Available or greater than the legal Homestead Max Count. Reaching a legal maximum exactly is not treated as an error. Export List writes the report to the configured Homestead or Guild Hall folder for the current XML type.");
+        RenderBullet("Use Deco Tools Interface Style",
+            "Enabled by default. Protects Deco Tools with its own 15 px font, spacing, colors, and transparency so global Nexus style changes cannot disrupt the addon's layout. Disable it to inherit the complete Nexus interface style instead. Nexus DPI and UI scaling still apply in either mode.");
         RenderBullet("Automatically backup and restore XML groups",
             "Enabled by default. Grouped imports and successful grouped Apply and Export operations create automatic restore points, while ungrouped imports attempt to recover lost group comments. Turning it off disables both automatic actions but never removes the Group Backup/Restore page or its manual tools.");
         RenderBullet("Backup Ungrouped XMLs",
             "Disabled by default. When enabled, the automatic backup system also creates complete rebuild points for XMLs containing decorations but no named groups. It does not control manual or safety backups, and grouped backups always retain their ungrouped decorations.");
+
+        RenderSectionHeading("Preview");
+        RenderParagraph(
+            "Bounding Box, Solid Faces, and the box, face, and decoration-point colors are configured here. Decoration-point visibility and Point Size remain accessible at all times from the far right of the main window's bottom status bar."
+        );
+
+        RenderSectionHeading("Quick Start Guide");
+        RenderParagraph(
+            "Open Quick Start / Tutorials reopens the initial folder, backup, and API setup pages together with the guided grouping, moving, and recovery tutorials. Closing the guide never blocks the addon or resets completed setup."
+        );
     }
 }
 
@@ -450,12 +482,12 @@ void DocumentationTab::Render()
         true,
         ImGuiWindowFlags_AlwaysVerticalScrollbar
     );
-    if (currentPage == DocumentationPage::MoveTool) RenderMoveToolPage();
+    if (currentPage == DocumentationPage::SharedImport) RenderSharedImportPage();
+    else if (currentPage == DocumentationPage::GroupTools) RenderGroupToolsPage();
+    else if (currentPage == DocumentationPage::MoveTool) RenderMoveToolPage();
     else if (currentPage == DocumentationPage::Patterns) RenderPatternsPage();
     else if (currentPage == DocumentationPage::MapSwap) RenderMapSwapPage();
-    else if (currentPage == DocumentationPage::GroupTools) RenderGroupToolsPage();
     else if (currentPage == DocumentationPage::GroupBackupRestore) RenderGroupBackupRestorePage();
-    else if (currentPage == DocumentationPage::GroupMover) RenderGroupMoverPage();
     else if (currentPage == DocumentationPage::Settings) RenderSettingsPage();
     ImGui::EndChild();
 }

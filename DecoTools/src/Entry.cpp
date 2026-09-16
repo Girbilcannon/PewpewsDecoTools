@@ -16,6 +16,8 @@
 #include "Core/GroupBackupDatabase.h"
 #include "UI/MainWindow.h"
 #include "UI/DecorationCounterWindow.h"
+#include "UI/DecoToolsStyle.h"
+#include "UI/QuickStartWindow.h"
 #include "UI/Tabs/MapSwapTab.h"
 #include "UI/Tabs/MergeExtractTab.h"
 #include "UI/Tabs/MoveToolTab.h"
@@ -77,9 +79,9 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef()
     addonDefinition.Name = AddonName;
 
     addonDefinition.Version.Major = 1;
-    addonDefinition.Version.Minor = 3;
-    addonDefinition.Version.Build = 3;
-    addonDefinition.Version.Revision = 8;
+    addonDefinition.Version.Minor = 4;
+    addonDefinition.Version.Build = 2;
+    addonDefinition.Version.Revision = 2;
 
     addonDefinition.Author = "Girbilcannon.8259";
     addonDefinition.Description =
@@ -117,7 +119,9 @@ namespace
         AppRuntime::Initialize(nexusApi);
         DecorationDatabase::Initialize(AppRuntime::GetAddonDirectory());
         AppSettings::Initialize();
+        DecoToolsStyle::Initialize(addonModule);
         GroupBackupDatabase::Initialize(AppRuntime::GetAddonDirectory());
+        QuickStartWindow::Initialize();
 
         nexusApi->Textures_GetOrCreateFromResource(
             QuickAccessTextureIdentifier,
@@ -156,7 +160,7 @@ namespace
         nexusApi->Log(
             LOGL_INFO,
             AddonName,
-            "Pewpew's Deco Tools 1.3.3.8 loaded."
+            "Pewpew's Deco Tools 1.4.2.2 loaded."
         );
     }
 
@@ -177,6 +181,8 @@ namespace
         MapSwapTab::Shutdown();
         PatternsTab::ClearImportedData();
         DecorationCounterWindow::Shutdown();
+        QuickStartWindow::Shutdown();
+        DecoToolsStyle::Shutdown();
         AppSettings::Shutdown();
         GroupBackupDatabase::Shutdown();
         DecorationDatabase::Shutdown();
@@ -204,6 +210,7 @@ namespace
 
         AppSettings::Update();
         DecorationDatabase::Update();
+        const DecoToolsStyle::Scope interfaceStyle;
         MainWindow::Render();
         MoveToolTab::RenderOverlay();
         PatternsTab::RenderOverlay();
@@ -212,6 +219,7 @@ namespace
 
     void AddonOptions()
     {
+        const DecoToolsStyle::Scope interfaceStyle;
         MainWindow::RenderOptions();
     }
 
