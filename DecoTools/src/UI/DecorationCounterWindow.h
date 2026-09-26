@@ -10,6 +10,12 @@
 
 namespace DecorationCounterWindow
 {
+    enum class GuildSelectionMode
+    {
+        UnifiedSelector,
+        ExternalSelection
+    };
+
     struct Requirement
     {
         int id = -1;
@@ -22,7 +28,8 @@ namespace DecorationCounterWindow
         int decorationType,
         const std::vector<Requirement>& requirements,
         const std::string& guildId = {},
-        bool loadAvailability = true
+        bool loadAvailability = true,
+        GuildSelectionMode guildSelectionMode = GuildSelectionMode::UnifiedSelector
     );
 
     void SetResolvedRequirements(

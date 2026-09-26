@@ -750,7 +750,8 @@ namespace
                 destination.type,
                 counterItems,
                 precheck.guildId,
-                !(destination.type == 1 && precheck.guildId.empty())
+                !(destination.type == 1 && precheck.guildId.empty()),
+                DecorationCounterWindow::GuildSelectionMode::ExternalSelection
             );
         }
     }
