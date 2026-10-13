@@ -5,6 +5,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace DecorationDatabase
 {
@@ -25,4 +26,10 @@ namespace DecorationDatabase
     int FindMaxCountById(int id, int type);
     int Count();
     const std::string& GetPath();
+
+    std::vector<std::string> GetNewDecorationNames(int type);
+    bool HasNewDecorations();
+    bool IsNewDecorationId(int id, int type);
+    bool ConsumeNewDecorationsAdded();
+    void ClearNewDecorations();
 }

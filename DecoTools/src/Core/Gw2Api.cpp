@@ -54,7 +54,7 @@ namespace
     {
         error.clear();
         HINTERNET session = WinHttpOpen(
-            L"PewpewsDecoTools/1.4.2.8",
+            L"PewpewsDecoTools/1.5.0.1",
             WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
             WINHTTP_NO_PROXY_NAME,
             WINHTTP_NO_PROXY_BYPASS,
@@ -450,6 +450,68 @@ bool Gw2Api::LoadHomesteadDecorationDefinitions(
     if (definitions.empty())
     {
         error = "The Guild Wars 2 API returned no Homestead decoration definitions.";
+        return false;
+    }
+    return true;
+}
+
+bool Gw2Api::LoadGuildDecorationDefinitions(
+    std::vector<GuildDecorationDefinition>& definitions,
+    std::string& error
+)
+{
+    definitions.clear();
+    const std::string idJson = Get(L"/v2/guild/upgrades", {}, error);
+    if (!error.empty()) return false;
+
+    const std::vector<int> ids = ParseIdArray(idJson);
+    if (ids.empty())
+    {
+        error = "The Guild Wars 2 API returned no guild upgrade IDs.";
+        return false;
+    }
+
+    constexpr size_t BatchSize = 150;
+    for (size_t batchStart = 0; batchStart < ids.size(); batchStart += BatchSize)
+    {
+        std::wostringstream path;
+        path << L"/v2/guild/upgrades?ids=";
+        const size_t batchEnd = (std::min)(ids.size(), batchStart + BatchSize);
+        for (size_t index = batchStart; index < batchEnd; ++index)
+        {
+            if (index != batchStart) path << L',';
+            path << ids[index];
+        }
+
+        const std::string json = Get(path.str(), {}, error);
+        if (!error.empty()) return false;
+
+        size_t position = 0;
+        while (true)
+        {
+            const size_t begin = json.find('{', position);
+            if (begin == std::string::npos) break;
+            const size_t end = FindObjectEnd(json, begin);
+            if (end == std::string::npos) break;
+
+            const std::string type = JsonString(json, "type", begin, end);
+            if (type == "Decoration")
+            {
+                GuildDecorationDefinition definition;
+                definition.id = JsonInt(json, "id", begin, end);
+                definition.name = JsonString(json, "name", begin, end);
+                if (definition.id > 0)
+                {
+                    definitions.push_back(std::move(definition));
+                }
+            }
+            position = end + 1;
+        }
+    }
+
+    if (definitions.empty())
+    {
+        error = "The Guild Wars 2 API returned no Guild Hall decoration definitions.";
         return false;
     }
     return true;

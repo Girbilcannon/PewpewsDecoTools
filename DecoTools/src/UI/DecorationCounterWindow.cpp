@@ -4,6 +4,7 @@
 
 #include "DecorationCounterWindow.h"
 #include "PrimaryActionButton.h"
+#include "NewDecos.h"
 
 #include "../Core/AppSettings.h"
 #include "../Core/DecorationDatabase.h"
@@ -1254,6 +1255,9 @@ void DecorationCounterWindow::Render()
     bool open = settings.showDecorationCounter;
     if (ImGui::Begin("Decoration Count", &open))
     {
+        const float newDecosButtonWidth =
+            ImGui::CalcTextSize("New Decos").x +
+            ImGui::GetStyle().FramePadding.x * 2.0f;
         if (PrimaryActionButton::Draw("Export List"))
         {
             ExportList();
@@ -1262,7 +1266,8 @@ void DecorationCounterWindow::Render()
             guildSelectionMode == GuildSelectionMode::UnifiedSelector)
         {
             ImGui::SameLine();
-            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::SetNextItemWidth(
+                -(newDecosButtonWidth + ImGui::GetStyle().ItemSpacing.x));
             const char* label = selectedGuildIndex >= 0
                 ? guilds[static_cast<size_t>(selectedGuildIndex)].name.c_str()
                 : "No Specific Guild";
@@ -1302,6 +1307,24 @@ void DecorationCounterWindow::Render()
                 ImGui::EndCombo();
             }
         }
+        ImGui::SameLine();
+        if (!(decorationType == 1 && !requirements.empty() &&
+            guildSelectionMode == GuildSelectionMode::UnifiedSelector))
+        {
+            const float rightAligned = ImGui::GetCursorPosX() +
+                ImGui::GetContentRegionAvail().x - newDecosButtonWidth;
+            if (rightAligned > ImGui::GetCursorPosX())
+                ImGui::SetCursorPosX(rightAligned);
+        }
+        if (ImGui::Button("New Decos", ImVec2(newDecosButtonWidth, 0.0f)))
+        {
+            NewDecos::Open();
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip(
+                "Show decorations discovered by API updates within the last 14 days.");
+        }
 
         if (!context.empty())
         {
@@ -1329,11 +1352,20 @@ void DecorationCounterWindow::Render()
                 DecorationDatabase::FindMaxCountById(item.id, decorationType);
             const bool overMaximum = maxCount >= 0 && item.required > maxCount;
             const bool editable = !InstancesForDecoration(item.id).empty();
+            const bool newlyDiscovered =
+                DecorationDatabase::IsNewDecorationId(item.id, decorationType);
             if (missing || overMaximum)
             {
                 ImGui::PushStyleColor(
                     ImGuiCol_Text,
                     ImVec4(1.0f, 0.28f, 0.28f, 1.0f)
+                );
+            }
+            else if (newlyDiscovered)
+            {
+                ImGui::PushStyleColor(
+                    ImGuiCol_Text,
+                    ImVec4(0.36f, 0.86f, 0.48f, 1.0f)
                 );
             }
             else if (editable)
@@ -1344,7 +1376,9 @@ void DecorationCounterWindow::Render()
                 );
             }
             ImGui::TextUnformatted(item.name.c_str());
-            if (editable && ImGui::IsItemHovered())
+            if (newlyDiscovered && ImGui::IsItemHovered())
+                ImGui::SetTooltip("New decoration discovered within the last 14 days.");
+            else if (editable && ImGui::IsItemHovered())
                 ImGui::SetTooltip("Editable element text detected. Right-click to edit.");
             if (editable && ImGui::BeginPopupContextItem("##ElementTextMenu"))
             {
@@ -1360,7 +1394,8 @@ void DecorationCounterWindow::Render()
             if (maxCount >= 0) ImGui::Text("%d", maxCount);
             else ImGui::TextUnformatted("-");
             ImGui::NextColumn();
-            if (missing || overMaximum || editable) ImGui::PopStyleColor();
+            if (missing || overMaximum || newlyDiscovered || editable)
+                ImGui::PopStyleColor();
             ImGui::PopID();
         }
         ImGui::Columns(1);

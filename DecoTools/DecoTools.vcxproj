@@ -156,6 +156,7 @@
     <Image Include="src\Resources\tray.png" />
     <Image Include="src\Resources\nav_move.png" />
     <Image Include="src\Resources\nav_patterns.png" />
+    <Image Include="src\Resources\nav_measure.png" />
     <Image Include="src\Resources\nav_map_swap.png" />
     <Image Include="src\Resources\nav_group_tools.png" />
     <Image Include="src\Resources\nav_group_backup.png" />
@@ -172,6 +173,7 @@
     <ClCompile Include="src\Core\DecorationDatabase.cpp" />
     <ClCompile Include="src\Core\Gw2Api.cpp" />
     <ClCompile Include="src\Core\GroupBackupDatabase.cpp" />
+    <ClCompile Include="src\Core\MeasurementDatabase.cpp" />
     <ClCompile Include="src\Core\SharedXmlWorkspace.cpp" />
     <ClCompile Include="src\Core\HelperApi.cpp" />
     <ClCompile Include="src\Entry.cpp" />
@@ -180,6 +182,7 @@
     <ClCompile Include="src\imgui\imgui_tables.cpp" />
     <ClCompile Include="src\imgui\imgui_widgets.cpp" />
     <ClCompile Include="src\UI\MainWindow.cpp" />
+    <ClCompile Include="src\UI\NewDecos.cpp" />
     <ClCompile Include="src\UI\DecoToolsStyle.cpp" />
     <ClCompile Include="src\UI\QuickStartWindow.cpp" />
     <ClCompile Include="src\UI\StatusBar.cpp" />
@@ -191,6 +194,7 @@
     <ClCompile Include="src\UI\Tabs\GroupBackupRestoreTab.cpp" />
     <ClCompile Include="src\UI\Tabs\MoveToolTab.cpp" />
     <ClCompile Include="src\UI\Tabs\PatternsTab.cpp" />
+    <ClCompile Include="src\UI\Tabs\MeasureToolTab.cpp" />
     <ClCompile Include="src\UI\Tabs\SettingsTab.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -201,6 +205,7 @@
     <ClInclude Include="src\Core\DecorationDatabase.h" />
     <ClInclude Include="src\Core\Gw2Api.h" />
     <ClInclude Include="src\Core\GroupBackupDatabase.h" />
+    <ClInclude Include="src\Core\MeasurementDatabase.h" />
     <ClInclude Include="src\Core\SharedXmlWorkspace.h" />
     <ClInclude Include="src\Core\Utf8Paths.h" />
     <ClInclude Include="src\Core\XmlFileUtils.h" />
@@ -213,6 +218,7 @@
     <ClInclude Include="src\mumble\Mumble.h" />
     <ClInclude Include="src\nexus\Nexus.h" />
     <ClInclude Include="src\UI\MainWindow.h" />
+    <ClInclude Include="src\UI\NewDecos.h" />
     <ClInclude Include="src\UI\DecoToolsStyle.h" />
     <ClInclude Include="src\UI\QuickStartWindow.h" />
     <ClInclude Include="src\UI\StatusBar.h" />
@@ -227,6 +233,7 @@
     <ClInclude Include="src\UI\Tabs\GroupBackupRestoreTab.h" />
     <ClInclude Include="src\UI\Tabs\MoveToolTab.h" />
     <ClInclude Include="src\UI\Tabs\PatternsTab.h" />
+    <ClInclude Include="src\UI\Tabs\MeasureToolTab.h" />
     <ClInclude Include="src\UI\Tabs\SettingsTab.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

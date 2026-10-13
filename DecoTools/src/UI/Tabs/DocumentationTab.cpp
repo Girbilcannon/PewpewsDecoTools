@@ -14,6 +14,7 @@ namespace
         GroupTools,
         MoveTool,
         Patterns,
+        MeasureTool,
         MapSwap,
         GroupBackupRestore,
         Settings
@@ -33,6 +34,7 @@ namespace
         { DocumentationPage::GroupTools, "Group Tools" },
         { DocumentationPage::MoveTool, "Move Tool" },
         { DocumentationPage::Patterns, "Patterns" },
+        { DocumentationPage::MeasureTool, "Measure Tool" },
         { DocumentationPage::MapSwap, "Map Swap" },
         { DocumentationPage::GroupBackupRestore, "Group Backup/Restore" },
         { DocumentationPage::Settings, "Settings" }
@@ -128,7 +130,7 @@ namespace
     {
         RenderPageTitle("Import & Shared Workflow");
         RenderParagraph(
-            "Version 1.4 uses one shared working XML across the complete addon. Import once at the top of the main window, switch freely between tools, and continue working without refreshing and importing the same file again."
+            "Version 1.5 uses one shared working XML across the complete addon. Import once at the top of the main window, switch freely between tools, and continue working without refreshing and importing the same file again."
         );
 
         RenderSectionHeading("Importing an XML");
@@ -137,7 +139,7 @@ namespace
         RenderStep(2, "Choose the working XML",
             "Open the XML list and select a file. The closed list remains compact, while the open list expands far enough to show long and indexed filenames. Use Refresh List after saving a new XML from Guild Wars 2.");
         RenderStep(3, "Import Selected",
-            "The selected file becomes the shared working XML for Move Tool, Patterns, Map Swap, Group Tools, and Group Backup/Restore. Switching tools does not unload it or create another import backup.");
+            "The selected file becomes the shared working XML for Move Tool, Patterns, Measure Tool, Map Swap, Group Tools, and Group Backup/Restore. Switching tools does not unload it or create another import backup.");
 
         RenderSectionHeading("Automatic Working Mode");
         RenderBullet("Full XML",
@@ -288,6 +290,42 @@ namespace
         );
     }
 
+    void RenderMeasureToolPage()
+    {
+        RenderPageTitle("Measure Tool");
+        RenderParagraph(
+            "Measure Tool records precise point-to-point distances inside the currently imported Layout. Measurements are stored independently of the decoration XML and remain available whenever that Layout lineage is imported again."
+        );
+
+        RenderSectionHeading("Ruler HUD");
+        RenderStep(1, "Show the Ruler HUD",
+            "Open Measure Tool and press Show Ruler HUD. The rounded semitransparent HUD remains usable even when the main Deco Tools window is closed, as long as a shared Layout remains imported.");
+        RenderStep(2, "Start a measurement",
+            "Press + New Measurement and choose Decorations, Groups, or Free Hand. A Layout can store as many as 100 measurements, named Length 001 through Length 100 by default.");
+        RenderStep(3, "Choose endpoints",
+            "Decorations displays decoration anchors in orange. Groups displays only averaged group-center anchors. Click one point for A and another for B; selected endpoints turn blue. Before B is committed, the ruler follows the character and updates its length live. Free Hand uses Start Point and End Point to capture the character position directly. Right-click a current endpoint to remove and replace it.");
+        RenderStep(4, "Choose ticks and line style",
+            "Ticks divide the complete distance into halves, quarters, eighths, or sixteenths. Click a gray tick to show its interpolated XYZ position in the HUD. Line Draw offers No Line, Single Line, Dashed Line, and an adaptive procedural Ruler whose marks remain sharp at different lengths and camera distances.");
+
+        RenderSectionHeading("Recorded Measurements");
+        RenderBullet("Visibility and selection",
+            "Use the Show checkbox beside a measurement to keep its ruler visible while working in any Deco Tools section. Show All and Hide All change every ruler at once. Checked rulers also provide snap targets at both endpoints and every enabled tick. Row selection remains independent and is used for editing, renaming, exporting, or removing measurements; Ctrl-click toggles individual rows and Shift-click selects a range.");
+        RenderBullet("Manipulator snapping",
+            "Drag the gray center square of a Move Tool manipulator, or a colored or gray center square in Patterns, near a visible ruler endpoint or tick. The handle snaps directly to that recorded point. Axis arrows continue moving freely without snapping.");
+        RenderBullet("Rename",
+            "Right-click a measurement name and choose Rename. Point A and Point B are shown compactly in the table; hover either field for its full coordinates and source label.");
+        RenderBullet("Remove",
+            "The red X removes one row. Remove deletes the current selection, while Remove All deletes every recorded measurement for the imported Layout. Multi-row and full removal operations require confirmation.");
+        RenderBullet("Undo and Redo",
+            "Up to 100 changes are retained for each Layout during the current Deco Tools session. Creation, endpoint changes, renaming, style changes, and removal can all be undone or redone. The current state is saved to measurements.json automatically.");
+        RenderBullet("Export CSV",
+            "Exports the current Layout's measurements to its configured Homestead or Guild Hall folder. The spreadsheet-ready file includes length, complete A and B coordinates, midpoint, XYZ differences, measurement type, ticks, line style, Layout information, and creation time.");
+
+        RenderNote(
+            "Distances use raw Guild Wars 2 Layout coordinate units with three decimal places. Saved endpoints are world-space snapshots, so later moving or deleting their original decoration or group does not silently alter an existing measurement."
+        );
+    }
+
     void RenderGroupToolsPage()
     {
         RenderPageTitle("Group Tools");
@@ -308,7 +346,11 @@ namespace
         RenderStep(3, "Create the group",
             "Enter a unique group name and click Create Group. The current XML is rewritten directly, and creating its first group automatically switches the entire addon to XML Groups mode.");
         RenderStep(4, "Ungroup when needed",
-            "Click the X beside a group to remove its heading and return its decorations to the ungrouped section. The final group can also be removed; doing so switches every tool back to Full XML mode.");
+            "Click the left X beside a group to remove only its heading and return its decorations to the ungrouped section. The final group can also be removed; doing so switches every tool back to Full XML mode.");
+        RenderStep(5, "Duplicate a group",
+            "Click Duplicate on the right side of any group row to clone every decoration in that group at its current position. The copy is created as an adjacent group named Original Group (Copy 1), Original Group (Copy 2), and so on, with existing copy numbers skipped automatically. The Decoration Counter refreshes immediately and flags any ownership shortage in red. Switch to Move Tool to reposition the new group.");
+        RenderStep(6, "Permanently delete a group",
+            "Click the red X to the right of Duplicate to delete both the group and every decoration inside it. Deco Tools asks for confirmation and requires a Safety backup before changing the XML. Cancel leaves the group completely untouched.");
 
         RenderSectionHeading("Merge XML Files");
         RenderStep(1, "Select additional XML files",
@@ -326,7 +368,7 @@ namespace
 
         RenderSectionHeading("Extract Groups");
         RenderStep(1, "Select groups",
-            "Choose one or several named groups from the list. Extract is available only when the shared XML contains groups.");
+            "Choose one or several named groups from the list, or left-click an orange group point in the layout. Selected groups turn blue and can be deselected with right-click. Extract is available only when the shared XML contains groups.");
         RenderStep(2, "Choose the result", "");
         RenderBullet("Extract to XML",
             "Creates one indexed Group Name_EXTRACTED#.xml for each selected group, then removes those groups and their decorations from the current XML.", 18.0f);
@@ -428,7 +470,9 @@ namespace
         RenderBullet("Remember addon window state",
             "Remembers the addon's window state and tool options between sessions.");
         RenderBullet("Show decoration count window",
-            "Shows or hides the Decoration Counter, which follows the current tool result. For a Guild Hall layout in Group Tools, Move Tool, or Patterns, choose No Specific Guild or one of the account's guilds at the top of the counter. A selected guild supplies its available-decoration totals; No Specific Guild leaves Available blank. Map Swap continues to use its own Destination Guild selection. Red rows indicate that Required is greater than Available or greater than the legal Homestead Max Count. Reaching a legal maximum exactly is not treated as an error. Export List writes the report to the configured Homestead or Guild Hall folder for the current XML type. Light-blue names contain editable sign-style text. Right-click one and choose Edit Element Text to select an instance, edit its 140-character payload in a visually wrapped field, review its fixed-width in-game preview, and apply it safely to the working XML. Visual wrapping does not add payload characters; only line breaks entered by the user are saved.");
+            "Shows or hides the Decoration Counter, which follows the current tool result. For a Guild Hall layout in Group Tools, Move Tool, or Patterns, choose No Specific Guild or one of the account's guilds at the top of the counter. A selected guild supplies its available-decoration totals; No Specific Guild leaves Available blank. Map Swap continues to use its own Destination Guild selection. Red rows indicate that Required is greater than Available or greater than the legal Homestead Max Count. Reaching a legal maximum exactly is not treated as an error. Green names identify decorations discovered by the API updater within the last 14 days. Export List writes the report to the configured Homestead or Guild Hall folder for the current XML type. Light-blue names contain editable sign-style text. Right-click one and choose Edit Element Text to select an instance, edit its 140-character payload in a visually wrapped field, review its fixed-width in-game preview, and apply it safely to the working XML. Visual wrapping does not add payload characters; only line breaks entered by the user are saved.");
+        RenderBullet("Auto-show New Decorations window at launch",
+            "Disabled by default. When enabled, the New Decorations window opens at launch while the local discovery list contains entries from the last 14 days. Open it manually at any time with New Decos in the Decoration Counter. Clear List Now empties only this notification history and never removes entries from the main decoration database.");
         RenderBullet("Use Deco Tools Interface Style",
             "Enabled by default. Protects Deco Tools with its own 15 px font, spacing, colors, and transparency so global Nexus style changes cannot disrupt the addon's layout. Disable it to inherit the complete Nexus interface style instead. Nexus DPI and UI scaling still apply in either mode.");
         RenderBullet("Automatically backup and restore XML groups",
@@ -486,6 +530,7 @@ void DocumentationTab::Render()
     else if (currentPage == DocumentationPage::GroupTools) RenderGroupToolsPage();
     else if (currentPage == DocumentationPage::MoveTool) RenderMoveToolPage();
     else if (currentPage == DocumentationPage::Patterns) RenderPatternsPage();
+    else if (currentPage == DocumentationPage::MeasureTool) RenderMeasureToolPage();
     else if (currentPage == DocumentationPage::MapSwap) RenderMapSwapPage();
     else if (currentPage == DocumentationPage::GroupBackupRestore) RenderGroupBackupRestorePage();
     else if (currentPage == DocumentationPage::Settings) RenderSettingsPage();

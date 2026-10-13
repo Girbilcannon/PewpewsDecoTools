@@ -3,6 +3,7 @@
 IDR_DECOTOOLS_QUICKACCESS_ICON PNG "Resources\\tray.png"
 IDR_DECOTOOLS_NAV_MOVE PNG "Resources\\nav_move.png"
 IDR_DECOTOOLS_NAV_PATTERNS PNG "Resources\\nav_patterns.png"
+IDR_DECOTOOLS_NAV_MEASURE PNG "Resources\\nav_measure.png"
 IDR_DECOTOOLS_NAV_MAP_SWAP PNG "Resources\\nav_map_swap.png"
 IDR_DECOTOOLS_NAV_GROUP_TOOLS PNG "Resources\\nav_group_tools.png"
 IDR_DECOTOOLS_NAV_SETTINGS PNG "Resources\\nav_settings.png"

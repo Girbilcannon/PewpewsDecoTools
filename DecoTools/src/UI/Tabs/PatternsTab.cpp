@@ -3,6 +3,7 @@
 // previews immutable-source transforms in game, and exports indexed PATTERN XMLs.
 
 #include "PatternsTab.h"
+#include "MeasureToolTab.h"
 
 #include "../../Core/AppRuntime.h"
 #include "../../Core/AppSettings.h"
@@ -382,6 +383,25 @@ namespace
         return ManipulatorUtils::WorldSizeForScreenPixels(
             Dot(Subtract(world,camera.position),camera.forward),
             NearClip,viewport.y,camera.fovRadians,pixels);
+    }
+    bool FindMeasurementSnap(const Camera& camera,ImVec2 viewport,ImVec2 mouse,
+        DVec3& point,ImVec2& screen)
+    {
+        std::vector<MeasureToolTab::SnapPoint> candidates;
+        MeasureToolTab::GetVisibleSnapPoints(candidates);
+        float nearest=16.0f; bool found=false;
+        for (const auto& candidate:candidates)
+        {
+            const DVec3 decoration={candidate.x,candidate.y,candidate.z};
+            ImVec2 projected;
+            if (!camera.Project(DecorationToWorld(decoration),viewport,projected)) continue;
+            const float distance=std::hypot(mouse.x-projected.x,mouse.y-projected.y);
+            if (distance<nearest)
+            {
+                nearest=distance; point=decoration; screen=projected; found=true;
+            }
+        }
+        return found;
     }
 
     void RenderSectionHeading(const char* label)
@@ -1370,6 +1390,82 @@ namespace
         status="Adjusted pattern spacing with the gray multidirectional handle.";
     }
 
+    bool SnapOffsetHandleTo(DVec3 target)
+    {
+        const PatternState before=CapturePatternState();
+        const DVec3 local=Multiply(
+            Transpose(wholePatternRotation),Subtract(target,mainCenter));
+        constexpr double tolerance=0.01;
+        if (patternType==PatternType::Line)
+        {
+            lineStep[0]=static_cast<float>(local.x);
+            lineStep[1]=static_cast<float>(local.y);
+            lineStep[2]=static_cast<float>(local.z);
+        }
+        else if (patternType==PatternType::Circle)
+        {
+            const bool closedFlatCircle=circleSweep==360 &&
+                std::abs(local.z)<0.000001;
+            const double divisor=closedFlatCircle
+                ? static_cast<double>(circleCount)
+                : static_cast<double>((std::max)(1,circleCount-1));
+            const double angle=static_cast<double>(circleSweep)/divisor*DegreesToRadians;
+            const double dx=std::cos(angle)-1.0,dy=std::sin(angle);
+            const double lengthSquared=dx*dx+dy*dy;
+            if (lengthSquared<=0.000000001) return false;
+            const double radius=(local.x*dx+local.y*dy)/lengthSquared;
+            if (radius<1.0 || std::hypot(local.x-radius*dx,local.y-radius*dy)>tolerance)
+                return false;
+            circleRadius=static_cast<float>(radius);
+            circleVerticalStep=static_cast<float>(
+                local.z*static_cast<double>((std::max)(1,circleCount-1)));
+        }
+        else if (patternType==PatternType::Square)
+        {
+            const int rx=patternType==PatternType::Square && squareOrigin==SquareOrigin::Center
+                ? (squareCenterX>0 ? 1 : 0) : (squareX>1 ? 1 : 0);
+            const int ry=squareOrigin==SquareOrigin::Center
+                ? (squareCenterY>0 ? 1 : 0) : (squareY>1 ? 1 : 0);
+            if (rx==0 && std::abs(local.x)>tolerance) return false;
+            if (ry==0 && std::abs(local.y)>tolerance) return false;
+            int levelDifference=0;
+            if (squareOrigin==SquareOrigin::Center)
+            {
+                const int mainLevel=(std::min)(squareCenterX,squareCenterY);
+                const int referenceLevel=(std::min)(squareCenterX-rx,squareCenterY-ry);
+                levelDifference=referenceLevel-mainLevel;
+            }
+            else
+                levelDifference=squareOrigin==SquareOrigin::Corner ? rx+ry : ry;
+            if (levelDifference==0)
+            {
+                if (std::abs(local.z)>tolerance) return false;
+            }
+            if (rx!=0) squareSpacing[0]=static_cast<float>(local.x/rx);
+            if (ry!=0) squareSpacing[1]=static_cast<float>(local.y/ry);
+            if (levelDifference!=0)
+                squareVerticalOffset=static_cast<float>(local.z/levelDifference);
+        }
+        else
+        {
+            const int rx=cubeCount[0]>1 ? 1 : 0;
+            const int ry=cubeCount[1]>1 ? 1 : 0;
+            const int rz=cubeCount[2]>1 ? 1 : 0;
+            if ((rx==0 && std::abs(local.x)>tolerance) ||
+                (ry==0 && std::abs(local.y)>tolerance) ||
+                (rz==0 && std::abs(local.z)>tolerance)) return false;
+            if (rx!=0) cubeSpacing[0]=static_cast<float>(local.x/rx);
+            if (ry!=0) cubeSpacing[1]=static_cast<float>(local.y/ry);
+            if (rz!=0) cubeSpacing[2]=static_cast<float>(local.z/rz);
+        }
+        RebuildPatternPreservingMain(false);
+        const bool exact=std::abs(offsetHandleCenter.x-target.x)<=0.05 &&
+            std::abs(offsetHandleCenter.y-target.y)<=0.05 &&
+            std::abs(offsetHandleCenter.z-target.z)<=0.05;
+        if (!exact) ApplyPatternState(before);
+        return exact;
+    }
+
     void DrawManipulators(const Camera& camera,ImVec2 viewport,ImDrawList* draw)
     {
         const ImVec2 mouse=inputCaptured || activeControl!=0 ? wndMousePosition : ImGui::GetIO().MousePos;
@@ -1576,12 +1672,29 @@ namespace
                     if (activeControl==1)
                     {
                         translation=Add(dragStartTranslation,decorationDelta);
-                        RebuildPattern(false); status="Moved the complete pattern.";
+                        RebuildPattern(false);
+                        DVec3 snapPoint; ImVec2 snapScreen;
+                        if (FindMeasurementSnap(camera,viewport,mouse,snapPoint,snapScreen))
+                        {
+                            translation=Add(translation,Subtract(snapPoint,mainCenter));
+                            RebuildPattern(false);
+                            draw->AddCircle(snapScreen,10.0f,IM_COL32(0,242,255,255),24,2.5f);
+                            status="Snapped the pattern anchor to a visible ruler point.";
+                        }
+                        else status="Moved the complete pattern.";
                     }
                     else
                     {
                         const DVec3 localDelta=Multiply(Transpose(wholePatternRotation),decorationDelta);
                         ApplyOffsetViewDrag(localDelta);
+                        DVec3 snapPoint; ImVec2 snapScreen;
+                        if (activeControl==2 && FindMeasurementSnap(
+                            camera,viewport,mouse,snapPoint,snapScreen) &&
+                            SnapOffsetHandleTo(snapPoint))
+                        {
+                            draw->AddCircle(snapScreen,10.0f,IM_COL32(0,242,255,255),24,2.5f);
+                            status="Snapped the pattern spacing handle to a visible ruler point.";
+                        }
                     }
                 }
                 else

@@ -110,6 +110,20 @@ void SettingsTab::Render()
     }
 
     if (ImGui::Checkbox(
+        "Auto-show New Decorations window at launch",
+        &settings.autoShowNewDecorations
+    ))
+    {
+        AppSettings::MarkDirty();
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip(
+            "When enabled, shows the locally discovered decoration list at launch while it contains entries from the last 14 days."
+        );
+    }
+
+    if (ImGui::Checkbox(
         "Use Deco Tools Interface Style",
         &settings.useDecoToolsInterfaceStyle
     ))

@@ -17,6 +17,7 @@
 #include "Tabs/MergeExtractTab.h"
 #include "Tabs/MoveToolTab.h"
 #include "Tabs/PatternsTab.h"
+#include "Tabs/MeasureToolTab.h"
 #include "Tabs/SettingsTab.h"
 
 #include <algorithm>
@@ -29,6 +30,7 @@ namespace
         None,
         MoveTool,
         Patterns,
+        MeasureTool,
         MapSwap,
         MergeExtract,
         GroupBackupRestore,
@@ -92,6 +94,7 @@ namespace
         PatternsTab::SetActive(activeTab == ActiveTab::Patterns);
         MapSwapTab::SetActive(activeTab == ActiveTab::MapSwap);
         MergeExtractTab::SetActive(activeTab == ActiveTab::MergeExtract);
+        MeasureToolTab::SetActive(activeTab == ActiveTab::MeasureTool);
     }
 
     struct NavigationItem
@@ -154,6 +157,7 @@ void MainWindow::Render()
         PatternsTab::SetActive(false);
         MapSwapTab::SetActive(false);
         MergeExtractTab::SetActive(false);
+        MeasureToolTab::SetActive(false);
         QuickStartWindow::Render();
         return;
     }
@@ -163,6 +167,7 @@ void MainWindow::Render()
         PatternsTab::SetActive(false);
         MapSwapTab::SetActive(false);
         MergeExtractTab::SetActive(false);
+        MeasureToolTab::SetActive(false);
         DecorationCounterWindow::Render();
         QuickStartWindow::Render();
         return;
@@ -179,6 +184,7 @@ void MainWindow::Render()
             { ActiveTab::MergeExtract, "Group Tools", "GroupTools", "DECOTOOLS_NAV_GROUP_TOOLS" },
             { ActiveTab::MoveTool, "Move Tool", "Move", "DECOTOOLS_NAV_MOVE" },
             { ActiveTab::Patterns, "Patterns", "Patterns", "DECOTOOLS_NAV_PATTERNS" },
+            { ActiveTab::MeasureTool, "Measure Tool", "Measure", "DECOTOOLS_NAV_MEASURE" },
             { ActiveTab::MapSwap, "Map Swap", "MapSwap", "DECOTOOLS_NAV_MAP_SWAP" }
         };
         const NavigationItem groupBackupRestoreItem =
@@ -220,6 +226,7 @@ void MainWindow::Render()
         SynchronizeActiveTool();
         if (activeTab == ActiveTab::MoveTool) MoveToolTab::Render();
         else if (activeTab == ActiveTab::Patterns) PatternsTab::Render();
+        else if (activeTab == ActiveTab::MeasureTool) MeasureToolTab::Render();
         else if (activeTab == ActiveTab::MapSwap) MapSwapTab::Render();
         else if (activeTab == ActiveTab::MergeExtract) MergeExtractTab::Render();
         else if (activeTab == ActiveTab::GroupBackupRestore) GroupBackupRestoreTab::Render();

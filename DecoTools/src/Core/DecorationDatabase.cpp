@@ -3,6 +3,7 @@
 // and resolves decoration names and IDs for XML tools and API count operations.
 
 #include "DecorationDatabase.h"
+#include "AppSettings.h"
 #include "Gw2Api.h"
 
 #include <algorithm>
@@ -12,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <future>
+#include <iomanip>
 #include <iterator>
 #include <set>
 #include <sstream>
@@ -1183,11 +1185,28 @@ namespace
 
     std::vector<DecorationDatabase::Entry> activeEntries;
     std::string databasePath;
+    struct NewDecorationEntry
+    {
+        std::string name;
+        int id = -1;
+        int type = 0;
+        std::time_t addedAt = 0;
+    };
+    std::vector<NewDecorationEntry> newDecorationEntries;
+    std::string newDecorationsPath;
+    bool trackCatalogDiscoveries = false;
+    bool newDecorationsAdded = false;
+    bool homesteadCatalogInitialized = false;
+    bool guildCatalogInitialized = false;
+    bool newDecorationsNeedsSave = false;
     struct CatalogResult
     {
-        bool success = false;
-        std::string error;
-        std::vector<Gw2Api::HomesteadDecorationDefinition> definitions;
+        bool homesteadSuccess = false;
+        bool guildSuccess = false;
+        std::string homesteadError;
+        std::string guildError;
+        std::vector<Gw2Api::HomesteadDecorationDefinition> homesteadDefinitions;
+        std::vector<Gw2Api::GuildDecorationDefinition> guildDefinitions;
     };
     std::future<CatalogResult> catalogJob;
     bool catalogUpdateRunning = false;
@@ -1380,6 +1399,196 @@ namespace
         }
     }
 
+    bool ReadJsonBool(
+        const std::string& json,
+        const char* key,
+        size_t begin,
+        size_t end,
+        bool fallback
+    )
+    {
+        const size_t position = FindJsonValue(json, key, begin, end);
+        if (position == std::string::npos || position >= end) return fallback;
+        if (json.compare(position, 4, "true") == 0) return true;
+        if (json.compare(position, 5, "false") == 0) return false;
+        return fallback;
+    }
+
+    std::time_t ReadJsonTimestamp(
+        const std::string& json,
+        const char* key,
+        size_t begin,
+        size_t end
+    )
+    {
+        const size_t position = FindJsonValue(json, key, begin, end);
+        if (position == std::string::npos || position >= end)
+        {
+            return 0;
+        }
+
+        try
+        {
+            return static_cast<std::time_t>(
+                std::stoll(json.substr(position, end - position))
+            );
+        }
+        catch (...)
+        {
+            return 0;
+        }
+    }
+
+    bool SaveNewDecorations()
+    {
+        if (newDecorationsPath.empty()) return false;
+
+        const std::filesystem::path finalPath(newDecorationsPath);
+        const std::filesystem::path temporaryPath =
+            finalPath.parent_path() / (finalPath.filename().string() + ".tmp");
+        std::ofstream file(temporaryPath, std::ios::binary | std::ios::trunc);
+        if (!file.is_open()) return false;
+
+        file << "{\n";
+        file << "  \"Version\": 2,\n";
+        file << "  \"HomesteadCatalogInitialized\": "
+            << (homesteadCatalogInitialized ? "true" : "false") << ",\n";
+        file << "  \"GuildHallCatalogInitialized\": "
+            << (guildCatalogInitialized ? "true" : "false") << ",\n";
+        file << "  \"Decorations\": [\n";
+        for (size_t index = 0; index < newDecorationEntries.size(); ++index)
+        {
+            const NewDecorationEntry& entry = newDecorationEntries[index];
+            std::tm localTime = {};
+            localtime_s(&localTime, &entry.addedAt);
+            file << "    {\n";
+            file << "      \"Name\": \"" << JsonEscape(entry.name) << "\",\n";
+            file << "      \"DecorationId\": " << entry.id << ",\n";
+            file << "      \"Type\": " << entry.type << ",\n";
+            file << "      \"AddedAtLocal\": \""
+                << std::put_time(&localTime, "%Y-%m-%dT%H:%M:%S") << "\",\n";
+            file << "      \"AddedAtUnix\": "
+                << static_cast<long long>(entry.addedAt) << "\n";
+            file << "    }"
+                << (index + 1 < newDecorationEntries.size() ? "," : "") << "\n";
+        }
+        file << "  ]\n";
+        file << "}\n";
+        file.close();
+
+        if (!file.good())
+        {
+            std::error_code cleanupError;
+            std::filesystem::remove(temporaryPath, cleanupError);
+            return false;
+        }
+
+        std::error_code error;
+        std::filesystem::remove(finalPath, error);
+        error.clear();
+        std::filesystem::rename(temporaryPath, finalPath, error);
+        return !error;
+    }
+
+    void LoadNewDecorations()
+    {
+        newDecorationEntries.clear();
+        homesteadCatalogInitialized = false;
+        guildCatalogInitialized = false;
+        newDecorationsNeedsSave = false;
+        std::ifstream file(newDecorationsPath, std::ios::binary);
+        if (!file.is_open()) return;
+
+        std::ostringstream contents;
+        contents << file.rdbuf();
+        const std::string json = contents.str();
+        const int version = ReadJsonId(json, "Version", 0, json.size());
+        if (version >= 2)
+        {
+            homesteadCatalogInitialized = ReadJsonBool(
+                json, "HomesteadCatalogInitialized", 0, json.size(), false);
+            guildCatalogInitialized = ReadJsonBool(
+                json, "GuildHallCatalogInitialized", 0, json.size(), false);
+        }
+        else if (version == 1)
+        {
+            // Version 1 already had a valid Homestead discovery history, but
+            // its first Guild Hall scan could mislabel the baseline as new.
+            homesteadCatalogInitialized = true;
+            guildCatalogInitialized = false;
+            newDecorationsNeedsSave = true;
+        }
+        const size_t decorationsKey = json.find("\"Decorations\"");
+        const size_t arrayBegin = decorationsKey == std::string::npos
+            ? std::string::npos
+            : json.find('[', decorationsKey);
+        if (arrayBegin == std::string::npos) return;
+        const size_t arrayEnd = FindQuotedBoundary(json, arrayBegin, '[', ']');
+        if (arrayEnd == std::string::npos) return;
+
+        size_t position = arrayBegin + 1;
+        while (position < arrayEnd)
+        {
+            const size_t objectBegin = json.find('{', position);
+            if (objectBegin == std::string::npos || objectBegin >= arrayEnd) break;
+            const size_t objectEnd = FindQuotedBoundary(json, objectBegin, '{', '}');
+            if (objectEnd == std::string::npos || objectEnd > arrayEnd) break;
+
+            NewDecorationEntry entry;
+            entry.name = CleanDatabaseName(
+                ReadJsonString(json, "Name", objectBegin, objectEnd));
+            entry.id = ReadJsonId(json, "DecorationId", objectBegin, objectEnd);
+            if (entry.id <= 0)
+            {
+                entry.id = ReadJsonId(
+                    json, "HomesteadId", objectBegin, objectEnd);
+            }
+            entry.type = ReadJsonId(json, "Type", objectBegin, objectEnd);
+            if (entry.type < 0 || entry.type > 1) entry.type = 0;
+            entry.addedAt = ReadJsonTimestamp(
+                json, "AddedAtUnix", objectBegin, objectEnd);
+            if (!entry.name.empty() && entry.id > 0 && entry.addedAt > 0)
+            {
+                newDecorationEntries.push_back(std::move(entry));
+            }
+            position = objectEnd + 1;
+        }
+
+        if (version == 1)
+        {
+            newDecorationEntries.erase(
+                std::remove_if(
+                    newDecorationEntries.begin(),
+                    newDecorationEntries.end(),
+                    [](const NewDecorationEntry& entry)
+                    {
+                        return entry.type == 1;
+                    }),
+                newDecorationEntries.end());
+        }
+    }
+
+    void PruneNewDecorations()
+    {
+        constexpr std::time_t RetentionSeconds = 14 * 24 * 60 * 60;
+        const std::time_t now = std::time(nullptr);
+        const size_t originalSize = newDecorationEntries.size();
+        newDecorationEntries.erase(
+            std::remove_if(
+                newDecorationEntries.begin(),
+                newDecorationEntries.end(),
+                [now](const NewDecorationEntry& entry)
+                {
+                    return entry.addedAt <= now &&
+                        now - entry.addedAt >= RetentionSeconds;
+                }),
+            newDecorationEntries.end());
+        if (newDecorationEntries.size() != originalSize)
+        {
+            SaveNewDecorations();
+        }
+    }
+
     bool LoadDatabase(
         const std::string& path,
         std::vector<DecorationDatabase::Entry>& loaded
@@ -1478,7 +1687,7 @@ namespace
         file << "  \"Version\": 2,\n";
         file << "  \"GeneratedAtUtc\": \""
             << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ") << "\",\n";
-        file << "  \"GeneratedBy\": \"Pewpew's Deco Tools 1.4.2.8\",\n";
+        file << "  \"GeneratedBy\": \"Pewpew's Deco Tools 1.5.0.1\",\n";
         file << "  \"SourceSnapshot\": {\n";
         file << "    \"GuildUpgradeIds\": [";
         size_t written = 0;
@@ -1535,28 +1744,21 @@ namespace
         return !error;
     }
 
-    bool NeedsCatalogUpdate()
-    {
-        return std::any_of(
-            activeEntries.begin(),
-            activeEntries.end(),
-            [](const DecorationDatabase::Entry& entry)
-            {
-                return entry.homesteadId > 0 && entry.maxCount < 0;
-            }
-        );
-    }
-
     void StartCatalogUpdate()
     {
-        if (catalogUpdateRunning || !NeedsCatalogUpdate()) return;
+        if (catalogUpdateRunning ||
+            !AppSettings::Get().checkForDatabaseUpdates) return;
         catalogUpdateRunning = true;
         catalogJob = std::async(std::launch::async, []()
         {
             CatalogResult result;
-            result.success = Gw2Api::LoadHomesteadDecorationDefinitions(
-                result.definitions,
-                result.error
+            result.homesteadSuccess = Gw2Api::LoadHomesteadDecorationDefinitions(
+                result.homesteadDefinitions,
+                result.homesteadError
+            );
+            result.guildSuccess = Gw2Api::LoadGuildDecorationDefinitions(
+                result.guildDefinitions,
+                result.guildError
             );
             return result;
         });
@@ -1564,34 +1766,110 @@ namespace
 
     void ApplyCatalogResult(CatalogResult&& result)
     {
-        if (!result.success) return;
-        for (const Gw2Api::HomesteadDecorationDefinition& definition : result.definitions)
+        if (!result.homesteadSuccess && !result.guildSuccess) return;
+        const std::time_t discoveredAt = std::time(nullptr);
+        bool recordedNewDecoration = false;
+
+        const auto recordDiscovery = [&](const std::string& name, int id, int type)
         {
-            auto found = std::find_if(
-                activeEntries.begin(),
-                activeEntries.end(),
-                [&definition](const DecorationDatabase::Entry& entry)
+            const bool catalogInitialized = type == 0
+                ? homesteadCatalogInitialized
+                : guildCatalogInitialized;
+            if (!trackCatalogDiscoveries || !catalogInitialized || name.empty())
+                return;
+            const auto alreadyRecorded = std::find_if(
+                newDecorationEntries.begin(),
+                newDecorationEntries.end(),
+                [id, type](const NewDecorationEntry& entry)
                 {
-                    return entry.homesteadId == definition.id;
-                }
-            );
-            if (found == activeEntries.end())
+                    return entry.id == id && entry.type == type;
+                });
+            if (alreadyRecorded == newDecorationEntries.end())
             {
-                activeEntries.push_back(
+                newDecorationEntries.push_back({ name, id, type, discoveredAt });
+                recordedNewDecoration = true;
+            }
+        };
+
+        if (result.homesteadSuccess)
+        {
+            for (const Gw2Api::HomesteadDecorationDefinition& definition :
+                result.homesteadDefinitions)
+            {
+                auto found = std::find_if(
+                    activeEntries.begin(),
+                    activeEntries.end(),
+                    [&definition](const DecorationDatabase::Entry& entry)
                     {
-                        CleanDatabaseName(definition.name),
-                        definition.id,
-                        -1,
-                        definition.maxCount
-                    }
-                );
-            }
-            else
-            {
+                        return entry.homesteadId == definition.id;
+                    });
                 const std::string cleanName = CleanDatabaseName(definition.name);
-                if (!cleanName.empty()) found->name = cleanName;
-                found->maxCount = definition.maxCount;
+                if (found == activeEntries.end())
+                {
+                    activeEntries.push_back(
+                        { cleanName, definition.id, -1, definition.maxCount });
+                    recordDiscovery(cleanName, definition.id, 0);
+                }
+                else
+                {
+                    if (!cleanName.empty()) found->name = cleanName;
+                    found->maxCount = definition.maxCount;
+                }
             }
+        }
+
+        if (result.guildSuccess)
+        {
+            for (const Gw2Api::GuildDecorationDefinition& definition :
+                result.guildDefinitions)
+            {
+                auto found = std::find_if(
+                    activeEntries.begin(),
+                    activeEntries.end(),
+                    [&definition](const DecorationDatabase::Entry& entry)
+                    {
+                        return entry.guildUpgradeId == definition.id;
+                    });
+                const std::string cleanName = CleanDatabaseName(definition.name);
+                if (found == activeEntries.end() && !cleanName.empty())
+                {
+                    found = std::find_if(
+                        activeEntries.begin(),
+                        activeEntries.end(),
+                        [&cleanName](const DecorationDatabase::Entry& entry)
+                        {
+                            return entry.guildUpgradeId <= 0 &&
+                                FoldAscii(entry.name) == FoldAscii(cleanName);
+                        });
+                }
+
+                if (found == activeEntries.end())
+                {
+                    activeEntries.push_back({ cleanName, -1, definition.id, -1 });
+                    recordDiscovery(cleanName, definition.id, 1);
+                }
+                else
+                {
+                    const bool newlyLinked = found->guildUpgradeId <= 0;
+                    found->guildUpgradeId = definition.id;
+                    if (!cleanName.empty()) found->name = cleanName;
+                    if (newlyLinked)
+                    {
+                        recordDiscovery(cleanName, definition.id, 1);
+                    }
+                }
+            }
+        }
+        bool baselineChanged = false;
+        if (result.homesteadSuccess && !homesteadCatalogInitialized)
+        {
+            homesteadCatalogInitialized = true;
+            baselineChanged = true;
+        }
+        if (result.guildSuccess && !guildCatalogInitialized)
+        {
+            guildCatalogInitialized = true;
+            baselineChanged = true;
         }
         std::sort(
             activeEntries.begin(),
@@ -1602,6 +1880,18 @@ namespace
             }
         );
         SaveDatabase(databasePath, activeEntries);
+        if (recordedNewDecoration || baselineChanged)
+        {
+            std::sort(
+                newDecorationEntries.begin(),
+                newDecorationEntries.end(),
+                [](const NewDecorationEntry& left, const NewDecorationEntry& right)
+                {
+                    return left.name < right.name;
+                });
+            SaveNewDecorations();
+            if (recordedNewDecoration) newDecorationsAdded = true;
+        }
     }
 }
 
@@ -1611,15 +1901,28 @@ void DecorationDatabase::Initialize(const std::string& addonDirectory)
         std::filesystem::path(addonDirectory) /
         "decorations.db.json"
     ).string();
+    newDecorationsPath = (
+        std::filesystem::path(addonDirectory) /
+        "new_decorations.db.json"
+    ).string();
+    LoadNewDecorations();
+    PruneNewDecorations();
+    if (!std::filesystem::exists(newDecorationsPath) || newDecorationsNeedsSave)
+    {
+        SaveNewDecorations();
+        newDecorationsNeedsSave = false;
+    }
 
     std::vector<Entry> loaded;
     if (LoadDatabase(databasePath, loaded))
     {
+        trackCatalogDiscoveries = true;
         activeEntries = std::move(loaded);
         StartCatalogUpdate();
         return;
     }
 
+    trackCatalogDiscoveries = false;
     activeEntries.assign(std::begin(Entries), std::end(Entries));
     SaveDatabase(databasePath, activeEntries);
     StartCatalogUpdate();
@@ -1651,6 +1954,13 @@ void DecorationDatabase::Shutdown()
     }
     activeEntries.clear();
     databasePath.clear();
+    newDecorationEntries.clear();
+    newDecorationsPath.clear();
+    trackCatalogDiscoveries = false;
+    newDecorationsAdded = false;
+    homesteadCatalogInitialized = false;
+    guildCatalogInitialized = false;
+    newDecorationsNeedsSave = false;
 }
 
 const DecorationDatabase::Entry* DecorationDatabase::FindByCleanName(const std::string& cleanName)
@@ -1699,4 +2009,46 @@ int DecorationDatabase::Count()
 const std::string& DecorationDatabase::GetPath()
 {
     return databasePath;
+}
+
+std::vector<std::string> DecorationDatabase::GetNewDecorationNames(int type)
+{
+    std::vector<std::string> names;
+    names.reserve(newDecorationEntries.size());
+    for (const NewDecorationEntry& entry : newDecorationEntries)
+    {
+        if (entry.type == type) names.push_back(entry.name);
+    }
+    return names;
+}
+
+bool DecorationDatabase::HasNewDecorations()
+{
+    return !newDecorationEntries.empty();
+}
+
+bool DecorationDatabase::IsNewDecorationId(int id, int type)
+{
+    if ((type != 0 && type != 1) || id <= 0) return false;
+    return std::any_of(
+        newDecorationEntries.begin(),
+        newDecorationEntries.end(),
+        [id, type](const NewDecorationEntry& entry)
+        {
+            return entry.id == id && entry.type == type;
+        });
+}
+
+bool DecorationDatabase::ConsumeNewDecorationsAdded()
+{
+    const bool result = newDecorationsAdded;
+    newDecorationsAdded = false;
+    return result;
+}
+
+void DecorationDatabase::ClearNewDecorations()
+{
+    newDecorationEntries.clear();
+    newDecorationsAdded = false;
+    SaveNewDecorations();
 }

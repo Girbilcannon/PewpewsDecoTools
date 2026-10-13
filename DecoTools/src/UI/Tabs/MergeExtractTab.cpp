@@ -116,6 +116,8 @@ namespace
     bool groupReleasePending = false;
     bool groupRightClickPending = false;
     int hoveredGroupProp = -1;
+    int hoveredExtractGroup = -1;
+    int pendingDeleteGroupIndex = -1;
     ImVec2 groupMousePosition(0.0f, 0.0f);
     ImVec2 marqueeStart(0.0f, 0.0f);
     ImVec2 marqueeEnd(0.0f, 0.0f);
@@ -285,6 +287,8 @@ namespace
         groupReleasePending = false;
         groupRightClickPending = false;
         hoveredGroupProp = -1;
+        hoveredExtractGroup = -1;
+        pendingDeleteGroupIndex = -1;
         std::string().swap(report);
         DecorationCounterWindow::Clear();
         status = "No XML imported";
@@ -694,6 +698,76 @@ namespace
             document.source.substr(0, document.rootOpenEnd + 1) +
             body.str() +
             document.source.substr(document.rootCloseStart);
+    }
+
+    std::string CopyNameBase(const std::string& name)
+    {
+        const size_t suffix = name.rfind(" (Copy ");
+        if (suffix == std::string::npos || name.empty() || name.back() != ')')
+            return name;
+        const size_t numberStart = suffix + sizeof(" (Copy ") - 1;
+        if (numberStart >= name.size() - 1) return name;
+        for (size_t index = numberStart; index + 1 < name.size(); ++index)
+        {
+            if (std::isdigit(static_cast<unsigned char>(name[index])) == 0)
+                return name;
+        }
+        return name.substr(0, suffix);
+    }
+
+    std::string NextGroupCopyName(const std::string& sourceName)
+    {
+        std::set<std::string> usedNames;
+        for (const Group& group : groups) usedNames.insert(group.name);
+        const std::string base = CopyNameBase(sourceName);
+        for (int copy = 1;; ++copy)
+        {
+            const std::string candidate =
+                base + " (Copy " + std::to_string(copy) + ")";
+            if (usedNames.find(candidate) == usedNames.end()) return candidate;
+        }
+    }
+
+    std::string BuildXmlWithDuplicatedGroup(
+        const XmlDocument& document,
+        const std::vector<Group>& orderedGroups,
+        size_t sourceGroupIndex,
+        const std::string& duplicateName)
+    {
+        const char* newline = document.source.find("\r\n") != std::string::npos
+            ? "\r\n"
+            : "\n";
+        std::ostringstream body;
+        for (const Prop& prop : document.props)
+        {
+            if (prop.groupIndex < 0)
+            {
+                body << newline << "  "
+                    << document.source.substr(prop.start, prop.end - prop.start);
+            }
+        }
+        for (size_t groupIndex = 0; groupIndex < orderedGroups.size(); ++groupIndex)
+        {
+            const Group& group = orderedGroups[groupIndex];
+            body << newline << newline << "  <!--" << group.name << "-->";
+            for (const Prop& prop : group.props)
+            {
+                body << newline << "  "
+                    << document.source.substr(prop.start, prop.end - prop.start);
+            }
+            if (groupIndex == sourceGroupIndex)
+            {
+                body << newline << newline << "  <!--" << duplicateName << "-->";
+                for (const Prop& prop : group.props)
+                {
+                    body << newline << "  "
+                        << document.source.substr(prop.start, prop.end - prop.start);
+                }
+            }
+        }
+        body << newline;
+        return document.source.substr(0, document.rootOpenEnd + 1) +
+            body.str() + document.source.substr(document.rootCloseStart);
     }
 
     std::string UniqueGroupName(const std::string& requested,
@@ -1125,6 +1199,117 @@ namespace
             std::to_string(count) + " decorations).";
     }
 
+    void DuplicateGroup(size_t index)
+    {
+        if (index >= groups.size()) return;
+        const Group& sourceGroup = groups[index];
+        if (sourceGroup.props.empty())
+        {
+            status = "The selected group contains no decorations to duplicate.";
+            return;
+        }
+
+        const std::string sourceName = sourceGroup.name;
+        const std::string duplicateName = NextGroupCopyName(sourceName);
+        const size_t decorationCount = sourceGroup.props.size();
+        const std::string rewritten = BuildXmlWithDuplicatedGroup(
+            groupDocument,
+            groups,
+            index,
+            duplicateName);
+        std::string error;
+        const std::string path = groupDocument.path;
+        if (!ReplaceFileSafely(Utf8Paths::FromUtf8(path), rewritten, error))
+        {
+            status = error;
+            return;
+        }
+
+        if (AppSettings::Get().automaticGroupBackupRestore)
+        {
+            std::string backupStatus;
+            GroupBackupDatabase::RecordFile(
+                path,
+                groupDocument.type,
+                GroupBackupDatabase::RestorePointType::Auto,
+                std::string(),
+                backupStatus,
+                AppSettings::Get().backupUngroupedXmls);
+        }
+
+        if (!ReloadGroupDocument(path, false)) return;
+        SharedXmlWorkspace::NotifyCurrentFileChanged();
+
+        // Refresh both Required and Available immediately. The counter's existing
+        // rules turn any ownership shortage or Homestead maximum overage red.
+        DecorationCounterWindow::SetRequirements(
+            groupDocument.fileName,
+            groupDocument.type,
+            BuildRequirements({ groupDocument }));
+        status = "Duplicated group \"" + sourceName + "\" as \"" +
+            duplicateName + "\" with " + std::to_string(decorationCount) +
+            " decorations.";
+    }
+
+    void DeleteGroupAndDecorations(size_t index)
+    {
+        if (index >= groups.size()) return;
+        const std::string groupNameToDelete = groups[index].name;
+        const size_t decorationCount = groups[index].props.size();
+
+        std::string backupStatus;
+        if (!GroupBackupDatabase::RecordFile(
+            groupDocument.path,
+            groupDocument.type,
+            GroupBackupDatabase::RestorePointType::Safety,
+            "Before Deleting Group " + groupNameToDelete,
+            backupStatus,
+            true))
+        {
+            status = "Could not create the safety backup. " + backupStatus;
+            return;
+        }
+
+        std::vector<const Group*> remaining;
+        remaining.reserve(groups.size() - 1);
+        for (size_t groupIndex = 0; groupIndex < groups.size(); ++groupIndex)
+        {
+            if (groupIndex != index) remaining.push_back(&groups[groupIndex]);
+        }
+        const std::string rewritten =
+            BuildXmlWithGroups(groupDocument, remaining);
+        std::string error;
+        const std::string path = groupDocument.path;
+        if (!ReplaceFileSafely(Utf8Paths::FromUtf8(path), rewritten, error))
+        {
+            status = error;
+            return;
+        }
+
+        if (AppSettings::Get().automaticGroupBackupRestore)
+        {
+            std::string automaticStatus;
+            GroupBackupDatabase::RecordFile(
+                path,
+                groupDocument.type,
+                GroupBackupDatabase::RestorePointType::Auto,
+                std::string(),
+                automaticStatus,
+                AppSettings::Get().backupUngroupedXmls);
+        }
+
+        if (!ReloadGroupDocument(path, false)) return;
+        SharedXmlWorkspace::NotifyCurrentFileChanged();
+        DecorationCounterWindow::SetRequirements(
+            groupDocument.fileName,
+            groupDocument.type,
+            BuildRequirements({ groupDocument }));
+        status = "Deleted group \"" + groupNameToDelete + "\" and " +
+            std::to_string(decorationCount) +
+            (decorationCount == 1 ? " decoration. " : " decorations. ") +
+            "A safety backup was created first.";
+    }
+
     void ImportExtract()
     {
         extractDocument = XmlDocument{};
@@ -1361,6 +1546,91 @@ namespace
             ImGui::EndCombo();
         }
     }
+
+    void RenderExtractOverlay()
+    {
+        hoveredExtractGroup = -1;
+        if (extractDocument.props.empty() || extractGroups.empty()) return;
+
+        Mumble::Data* mumble = AppRuntime::GetMumble();
+        if (mumble == nullptr || mumble->Context.MapID == 0) return;
+
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.MousePos.x >= 0.0f && io.MousePos.y >= 0.0f)
+            groupMousePosition = io.MousePos;
+        const ImVec2 viewport = io.DisplaySize;
+        const Camera camera = CameraFromMumble(*mumble);
+        ImDrawList* draw = ImGui::GetBackgroundDrawList();
+        const float pointSize = (std::max)(2.0f, AppSettings::Get().pointSize);
+        const float hitRadius = pointSize + 5.0f;
+        const ImU32 orange = IM_COL32(255, 166, 36, 255);
+        const ImU32 blue = IM_COL32(50, 150, 255, 255);
+        float closestDistance = std::numeric_limits<float>::infinity();
+
+        for (const Prop& prop : extractDocument.props)
+        {
+            if (!prop.hasPosition || prop.groupIndex < 0 ||
+                prop.groupIndex >= static_cast<int>(extractGroups.size()))
+            {
+                continue;
+            }
+            ImVec2 point;
+            if (!camera.Project(DecorationToWorld(prop.position), viewport, point))
+                continue;
+            const Group& group =
+                extractGroups[static_cast<size_t>(prop.groupIndex)];
+            draw->AddCircleFilled(
+                point,
+                pointSize,
+                group.selected ? blue : orange,
+                12);
+            const float dx = point.x - groupMousePosition.x;
+            const float dy = point.y - groupMousePosition.y;
+            const float distance = std::sqrt(dx * dx + dy * dy);
+            if (distance <= hitRadius && distance < closestDistance)
+            {
+                closestDistance = distance;
+                hoveredExtractGroup = prop.groupIndex;
+            }
+        }
+
+        if (hoveredExtractGroup < 0 ||
+            hoveredExtractGroup >= static_cast<int>(extractGroups.size()))
+        {
+            return;
+        }
+        const std::string& name =
+            extractGroups[static_cast<size_t>(hoveredExtractGroup)].name;
+        const ImVec2 textSize = ImGui::CalcTextSize(name.c_str());
+        const ImVec2 padding(7.0f, 5.0f);
+        ImVec2 tooltipPosition(
+            groupMousePosition.x + 18.0f,
+            groupMousePosition.y + 8.0f);
+        const ImVec2 tooltipSize(
+            textSize.x + padding.x * 2.0f,
+            textSize.y + padding.y * 2.0f);
+        tooltipPosition.x = (std::min)(
+            tooltipPosition.x,
+            (std::max)(4.0f, viewport.x - tooltipSize.x - 4.0f));
+        tooltipPosition.y = (std::min)(
+            tooltipPosition.y,
+            (std::max)(4.0f, viewport.y - tooltipSize.y - 4.0f));
+        ImDrawList* foreground = ImGui::GetForegroundDrawList();
+        foreground->AddRectFilled(
+            tooltipPosition,
+            ImVec2(
+                tooltipPosition.x + tooltipSize.x,
+                tooltipPosition.y + tooltipSize.y),
+            IM_COL32(24, 24, 28, 245),
+            4.0f);
+        foreground->AddText(
+            ImVec2(
+                tooltipPosition.x + padding.x,
+                tooltipPosition.y + padding.y),
+            IM_COL32(255, 255, 255, 255),
+            name.c_str());
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    }
 }
 
 void MergeExtractTab::Render()
@@ -1543,24 +1813,167 @@ void MergeExtractTab::Render()
             }
             else
             {
-                ImGui::TextDisabled("Ungroup");
+                size_t ungroupIndex = groups.size();
+                size_t duplicateIndex = groups.size();
+                size_t permanentDeleteIndex = groups.size();
                 ImGui::BeginChild("##GroupList", ImVec2(0.0f, 0.0f), true);
-                for (size_t index = 0; index < groups.size(); ++index)
+                const float ungroupWidth =
+                    ImGui::CalcTextSize("X").x +
+                    ImGui::GetStyle().FramePadding.x * 2.0f + 6.0f;
+                const float duplicateWidth =
+                    ImGui::CalcTextSize("Duplicate").x +
+                    ImGui::GetStyle().FramePadding.x * 2.0f + 20.0f;
+                const float deleteWidth =
+                    ImGui::CalcTextSize("X").x +
+                    ImGui::GetStyle().FramePadding.x * 2.0f + 10.0f;
+                if (ImGui::BeginTable(
+                    "##GroupActions",
+                    4,
+                    ImGuiTableFlags_SizingStretchProp |
+                        ImGuiTableFlags_NoSavedSettings))
                 {
-                    const Group& group = groups[index];
-                    ImGui::PushID(static_cast<int>(index));
-                    if (ImGui::SmallButton("X"))
+                    ImGui::TableSetupColumn(
+                        "##Ungroup",
+                        ImGuiTableColumnFlags_WidthFixed,
+                        ungroupWidth);
+                    ImGui::TableSetupColumn(
+                        "##GroupName",
+                        ImGuiTableColumnFlags_WidthStretch,
+                        1.0f);
+                    ImGui::TableSetupColumn(
+                        "##Duplicate",
+                        ImGuiTableColumnFlags_WidthFixed,
+                        duplicateWidth);
+                    ImGui::TableSetupColumn(
+                        "##PermanentDelete",
+                        ImGuiTableColumnFlags_WidthFixed,
+                        deleteWidth);
+
+                    for (size_t index = 0; index < groups.size(); ++index)
                     {
+                        const Group& group = groups[index];
+                        ImGui::PushID(static_cast<int>(index));
+                        ImGui::TableNextRow();
+
+                        ImGui::TableSetColumnIndex(0);
+                        if (ImGui::SmallButton("X")) ungroupIndex = index;
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip(
+                                "Ungroup only; decorations are preserved.");
+
+                        ImGui::TableSetColumnIndex(1);
+                        const std::string groupLabel = group.name + " (" +
+                            std::to_string(group.props.size()) + " decorations)";
+                        const float labelWidth = ImGui::CalcTextSize(
+                            groupLabel.c_str()).x;
+                        const float availableLabelWidth =
+                            ImGui::GetContentRegionAvail().x;
+                        ImGui::TextUnformatted(groupLabel.c_str());
+                        if (labelWidth > availableLabelWidth &&
+                            ImGui::IsItemHovered())
+                        {
+                            ImGui::SetTooltip("%s", groupLabel.c_str());
+                        }
+
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 16.0f);
+                        ImGui::PushStyleColor(
+                            ImGuiCol_Button,
+                            ImVec4(0.36f, 0.37f, 0.40f, 1.0f));
+                        if (ImGui::SmallButton("Duplicate"))
+                            duplicateIndex = index;
+                        ImGui::PopStyleColor();
+
+                        ImGui::TableSetColumnIndex(3);
+                        ImGui::PushStyleColor(
+                            ImGuiCol_Button,
+                            ImVec4(0.68f, 0.12f, 0.12f, 1.0f));
+                        ImGui::PushStyleColor(
+                            ImGuiCol_ButtonHovered,
+                            ImVec4(0.82f, 0.18f, 0.18f, 1.0f));
+                        ImGui::PushStyleColor(
+                            ImGuiCol_ButtonActive,
+                            ImVec4(0.56f, 0.08f, 0.08f, 1.0f));
+                        if (ImGui::SmallButton("X##DeleteGroupAndDecorations"))
+                            permanentDeleteIndex = index;
+                        ImGui::PopStyleColor(3);
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip(
+                                "Delete this group and every decoration inside it.");
                         ImGui::PopID();
-                        Ungroup(index);
-                        break;
                     }
-                    ImGui::SameLine();
-                    ImGui::Text("%s (%zu decorations)",
-                        group.name.c_str(), group.props.size());
-                    ImGui::PopID();
+                    ImGui::EndTable();
                 }
                 ImGui::EndChild();
+                if (permanentDeleteIndex < groups.size())
+                {
+                    pendingDeleteGroupIndex =
+                        static_cast<int>(permanentDeleteIndex);
+                    ImGui::OpenPopup("Confirm Permanent Group Deletion");
+                }
+                if (ungroupIndex < groups.size()) Ungroup(ungroupIndex);
+                else if (duplicateIndex < groups.size())
+                    DuplicateGroup(duplicateIndex);
+
+                if (ImGui::BeginPopupModal(
+                    "Confirm Permanent Group Deletion",
+                    nullptr,
+                    ImGuiWindowFlags_AlwaysAutoResize))
+                {
+                    if (pendingDeleteGroupIndex >= 0 &&
+                        pendingDeleteGroupIndex < static_cast<int>(groups.size()))
+                    {
+                        const Group& pendingGroup = groups[
+                            static_cast<size_t>(pendingDeleteGroupIndex)];
+                        ImGui::TextWrapped(
+                            "This operation will permanently delete the group \"%s\" as well as all %zu decorations contained within it.",
+                            pendingGroup.name.c_str(),
+                            pendingGroup.props.size());
+                        ImGui::Spacing();
+                        ImGui::TextWrapped(
+                            "Are you sure you wish to proceed?");
+                        ImGui::Spacing();
+                        ImGui::TextDisabled(
+                            "A safety backup will be created before the XML is changed.");
+                        ImGui::Spacing();
+
+                        constexpr float confirmationWidth = 130.0f;
+                        ImGui::PushStyleColor(
+                            ImGuiCol_Button,
+                            ImVec4(0.68f, 0.12f, 0.12f, 1.0f));
+                        ImGui::PushStyleColor(
+                            ImGuiCol_ButtonHovered,
+                            ImVec4(0.82f, 0.18f, 0.18f, 1.0f));
+                        ImGui::PushStyleColor(
+                            ImGuiCol_ButtonActive,
+                            ImVec4(0.56f, 0.08f, 0.08f, 1.0f));
+                        if (ImGui::Button(
+                            "Delete Group",
+                            ImVec2(confirmationWidth, 0.0f)))
+                        {
+                            const size_t deleteIndex = static_cast<size_t>(
+                                pendingDeleteGroupIndex);
+                            pendingDeleteGroupIndex = -1;
+                            DeleteGroupAndDecorations(deleteIndex);
+                            ImGui::CloseCurrentPopup();
+                        }
+                        ImGui::PopStyleColor(3);
+                        ImGui::SameLine();
+                        if (ImGui::Button(
+                            "Cancel##PermanentGroupDeletion",
+                            ImVec2(confirmationWidth, 0.0f)))
+                        {
+                            pendingDeleteGroupIndex = -1;
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+                    else
+                    {
+                        pendingDeleteGroupIndex = -1;
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::EndPopup();
+                }
             }
         }
     }
@@ -1737,7 +2150,7 @@ bool MergeExtractTab::ImportSharedPath(const std::string& path)
 
 void MergeExtractTab::RenderOverlay()
 {
-    if (!toolActive || operation != 1 || groupDocument.props.empty() ||
+    if (!toolActive ||
         !AppSettings::Get().windowVisible ||
         !AppSettings::Get().showDecorationPoints)
     {
@@ -1746,6 +2159,18 @@ void MergeExtractTab::RenderOverlay()
         groupMouseDown = false;
         groupReleasePending = false;
         groupRightClickPending = false;
+        return;
+    }
+
+    if (operation == 2)
+    {
+        RenderExtractOverlay();
+        return;
+    }
+    if (operation != 1 || groupDocument.props.empty())
+    {
+        hoveredGroupProp = -1;
+        hoveredExtractGroup = -1;
         return;
     }
 
@@ -1954,11 +2379,41 @@ void MergeExtractTab::SetActive(bool active)
 UINT MergeExtractTab::WndProc(HWND, UINT message, WPARAM, LPARAM lParam)
 {
     if (!toolActive) return 1;
-    if (operation != 1 || groupDocument.props.empty() ||
-        !AppSettings::Get().windowVisible)
+    if (!AppSettings::Get().windowVisible)
     {
         return 1;
     }
+
+    if (operation == 2)
+    {
+        if (ImGui::GetIO().WantCaptureMouse) return 1;
+        if (extractDocument.props.empty() || hoveredExtractGroup < 0 ||
+            hoveredExtractGroup >= static_cast<int>(extractGroups.size()))
+        {
+            return 1;
+        }
+        Group& group = extractGroups[static_cast<size_t>(hoveredExtractGroup)];
+        if (message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK)
+        {
+            if (!group.selected)
+            {
+                group.selected = true;
+                status = "Selected group: " + group.name + ".";
+            }
+            return 0;
+        }
+        if (message == WM_RBUTTONDOWN)
+        {
+            if (group.selected)
+            {
+                group.selected = false;
+                status = "Deselected group: " + group.name + ".";
+            }
+            return 0;
+        }
+        return 1;
+    }
+    if (operation != 1 || groupDocument.props.empty()) return 1;
 
     switch (message)
     {

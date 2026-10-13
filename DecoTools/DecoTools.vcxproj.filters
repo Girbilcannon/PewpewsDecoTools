@@ -44,6 +44,7 @@
     </Image>
     <Image Include="src\Resources\nav_move.png"><Filter>Resource Files</Filter></Image>
     <Image Include="src\Resources\nav_patterns.png"><Filter>Resource Files</Filter></Image>
+    <Image Include="src\Resources\nav_measure.png"><Filter>Resource Files</Filter></Image>
     <Image Include="src\Resources\nav_map_swap.png"><Filter>Resource Files</Filter></Image>
     <Image Include="src\Resources\nav_group_tools.png"><Filter>Resource Files</Filter></Image>
     <Image Include="src\Resources\nav_group_backup.png"><Filter>Resource Files</Filter></Image>
@@ -72,6 +73,9 @@
     <ClCompile Include="src\Core\GroupBackupDatabase.cpp">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
+    <ClCompile Include="src\Core\MeasurementDatabase.cpp">
+      <Filter>Source Files\Core</Filter>
+    </ClCompile>
     <ClCompile Include="src\Entry.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -88,6 +92,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\UI\MainWindow.cpp">
+      <Filter>Source Files\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI\NewDecos.cpp">
       <Filter>Source Files\UI</Filter>
     </ClCompile>
     <ClCompile Include="src\UI\DecoToolsStyle.cpp">
@@ -120,6 +127,9 @@
     <ClCompile Include="src\UI\Tabs\PatternsTab.cpp">
       <Filter>Source Files\UI\Tabs</Filter>
     </ClCompile>
+    <ClCompile Include="src\UI\Tabs\MeasureToolTab.cpp">
+      <Filter>Source Files\UI\Tabs</Filter>
+    </ClCompile>
     <ClCompile Include="src\UI\Tabs\DocumentationTab.cpp">
       <Filter>Source Files\UI\Tabs</Filter>
     </ClCompile>
@@ -147,6 +157,9 @@
       <Filter>Header Files\Core</Filter>
     </ClInclude>
     <ClInclude Include="src\Core\GroupBackupDatabase.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Core\MeasurementDatabase.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
     <ClInclude Include="src\Core\Utf8Paths.h">
@@ -180,6 +193,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\MainWindow.h">
+      <Filter>Header Files\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\NewDecos.h">
       <Filter>Header Files\UI</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\DecoToolsStyle.h">
@@ -219,6 +235,9 @@
       <Filter>Header Files\UI\Tabs</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\Tabs\PatternsTab.h">
+      <Filter>Header Files\UI\Tabs</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UI\Tabs\MeasureToolTab.h">
       <Filter>Header Files\UI\Tabs</Filter>
     </ClInclude>
     <ClInclude Include="src\UI\Tabs\DocumentationTab.h">

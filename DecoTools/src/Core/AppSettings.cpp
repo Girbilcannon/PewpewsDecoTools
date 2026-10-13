@@ -267,6 +267,11 @@ namespace
             FindBool(json, "windowVisible", settings.windowVisible);
         settings.showDecorationCounter =
             FindBool(json, "showDecorationCounter", settings.showDecorationCounter);
+        settings.autoShowNewDecorations = FindBool(
+            json,
+            "autoShowNewDecorations",
+            settings.autoShowNewDecorations
+        );
         settings.automaticGroupBackupRestore = FindBool(
             json,
             "automaticGroupBackupRestore",
@@ -360,7 +365,7 @@ void AppSettings::SaveNow()
 
     file << std::setprecision(9);
     file << "{\n";
-    file << "  \"version\": \"1.4.2.8\",\n";
+    file << "  \"version\": \"1.5.0.1\",\n";
     file << "  \"apiKey\": \"" << JsonEscape(settings.apiKey.data()) << "\",\n";
     file << "  \"homesteadFolder\": \"" << JsonEscape(settings.homesteadFolder.data()) << "\",\n";
     file << "  \"guildHallFolder\": \"" << JsonEscape(settings.guildHallFolder.data()) << "\",\n";
@@ -374,6 +379,8 @@ void AppSettings::SaveNow()
         << (settings.windowVisible ? "true" : "false") << ",\n";
     file << "  \"showDecorationCounter\": "
         << (settings.showDecorationCounter ? "true" : "false") << ",\n";
+    file << "  \"autoShowNewDecorations\": "
+        << (settings.autoShowNewDecorations ? "true" : "false") << ",\n";
     file << "  \"automaticGroupBackupRestore\": "
         << (settings.automaticGroupBackupRestore ? "true" : "false") << ",\n";
     file << "  \"backupUngroupedXmls\": "

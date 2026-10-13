@@ -14,14 +14,17 @@
 #include "Core/AppSettings.h"
 #include "Core/DecorationDatabase.h"
 #include "Core/GroupBackupDatabase.h"
+#include "Core/MeasurementDatabase.h"
 #include "UI/MainWindow.h"
 #include "UI/DecorationCounterWindow.h"
 #include "UI/DecoToolsStyle.h"
+#include "UI/NewDecos.h"
 #include "UI/QuickStartWindow.h"
 #include "UI/Tabs/MapSwapTab.h"
 #include "UI/Tabs/MergeExtractTab.h"
 #include "UI/Tabs/MoveToolTab.h"
 #include "UI/Tabs/PatternsTab.h"
+#include "UI/Tabs/MeasureToolTab.h"
 
 namespace
 {
@@ -40,6 +43,7 @@ namespace
     {
         { "DECOTOOLS_NAV_MOVE", IDR_DECOTOOLS_NAV_MOVE },
         { "DECOTOOLS_NAV_PATTERNS", IDR_DECOTOOLS_NAV_PATTERNS },
+        { "DECOTOOLS_NAV_MEASURE", IDR_DECOTOOLS_NAV_MEASURE },
         { "DECOTOOLS_NAV_MAP_SWAP", IDR_DECOTOOLS_NAV_MAP_SWAP },
         { "DECOTOOLS_NAV_GROUP_TOOLS", IDR_DECOTOOLS_NAV_GROUP_TOOLS },
         { "DECOTOOLS_NAV_GROUP_BACKUP", IDR_DECOTOOLS_NAV_GROUP_BACKUP },
@@ -79,13 +83,13 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef()
     addonDefinition.Name = AddonName;
 
     addonDefinition.Version.Major = 1;
-    addonDefinition.Version.Minor = 4;
-    addonDefinition.Version.Build = 2;
-    addonDefinition.Version.Revision = 8;
+    addonDefinition.Version.Minor = 5;
+    addonDefinition.Version.Build = 0;
+    addonDefinition.Version.Revision = 1;
 
     addonDefinition.Author = "Girbilcannon.8259";
     addonDefinition.Description =
-        "Move, pattern, group, merge, extract, and map swap large decoration builds for Homesteads and Guild Halls.";
+        "Move, pattern, measure, group, merge, extract, and map swap large decoration builds for Homesteads and Guild Halls.";
 
     addonDefinition.Load = AddonLoad;
     addonDefinition.Unload = AddonUnload;
@@ -117,11 +121,14 @@ namespace
         );
 
         AppRuntime::Initialize(nexusApi);
-        DecorationDatabase::Initialize(AppRuntime::GetAddonDirectory());
         AppSettings::Initialize();
+        DecorationDatabase::Initialize(AppRuntime::GetAddonDirectory());
         DecoToolsStyle::Initialize(addonModule);
         GroupBackupDatabase::Initialize(AppRuntime::GetAddonDirectory());
+        MeasurementDatabase::Initialize(AppRuntime::GetAddonDirectory());
+        MeasureToolTab::Initialize();
         QuickStartWindow::Initialize();
+        NewDecos::Initialize();
 
         nexusApi->Textures_GetOrCreateFromResource(
             QuickAccessTextureIdentifier,
@@ -160,7 +167,7 @@ namespace
         nexusApi->Log(
             LOGL_INFO,
             AddonName,
-            "Pewpew's Deco Tools 1.4.2.8 loaded."
+            "Pewpew's Deco Tools 1.5.0.1 loaded."
         );
     }
 
@@ -179,12 +186,14 @@ namespace
         );
 
         MapSwapTab::Shutdown();
+        MeasureToolTab::Shutdown();
         PatternsTab::ClearImportedData();
         DecorationCounterWindow::Shutdown();
         QuickStartWindow::Shutdown();
         DecoToolsStyle::Shutdown();
         AppSettings::Shutdown();
         GroupBackupDatabase::Shutdown();
+        MeasurementDatabase::Shutdown();
         DecorationDatabase::Shutdown();
 
         nexusApi->WndProc_Deregister(AddonWndProc);
@@ -210,11 +219,19 @@ namespace
 
         AppSettings::Update();
         DecorationDatabase::Update();
-        const DecoToolsStyle::Scope interfaceStyle;
-        MainWindow::Render();
-        MoveToolTab::RenderOverlay();
-        PatternsTab::RenderOverlay();
-        MergeExtractTab::RenderOverlay();
+        MeasureToolTab::SynchronizeSharedWorkspace();
+        {
+            const DecoToolsStyle::Scope interfaceStyle;
+            MainWindow::Render();
+            NewDecos::Render();
+            MoveToolTab::RenderOverlay();
+            PatternsTab::RenderOverlay();
+            MergeExtractTab::RenderOverlay();
+            MeasureToolTab::RenderOverlay();
+        }
+        // The Ruler HUD intentionally renders after the protected Deco Tools
+        // scope so it can inherit Nexus font/DPI choices and keep its own HUD theme.
+        MeasureToolTab::RenderHud();
     }
 
     void AddonOptions()
@@ -243,6 +260,10 @@ namespace
 
     UINT AddonWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
     {
+        if (MeasureToolTab::WndProc(window, message, wParam, lParam) == 0)
+        {
+            return 0;
+        }
         if (PatternsTab::WndProc(window, message, wParam, lParam) == 0)
         {
             return 0;

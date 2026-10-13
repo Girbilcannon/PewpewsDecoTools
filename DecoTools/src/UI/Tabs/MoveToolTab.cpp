@@ -3,6 +3,7 @@
 // in-game, supports interactive positioning, and exports relocated layouts.
 
 #include "MoveToolTab.h"
+#include "MeasureToolTab.h"
 #include "../MoveToolGroups.h"
 
 #include "../../Core/AppRuntime.h"
@@ -476,6 +477,36 @@ namespace
         return ManipulatorUtils::WorldSizeForScreenPixels(
             Dot(Subtract(world, camera.position), camera.forward),
             NearClip, viewport.y, camera.fovRadians, pixels);
+    }
+
+    bool FindMeasurementSnap(
+        const Camera& camera,
+        ImVec2 viewport,
+        ImVec2 mouse,
+        DVec3& point,
+        ImVec2& screen)
+    {
+        std::vector<MeasureToolTab::SnapPoint> candidates;
+        MeasureToolTab::GetVisibleSnapPoints(candidates);
+        float nearest = 16.0f;
+        bool found = false;
+        for (const auto& candidate : candidates)
+        {
+            const DVec3 decoration{ candidate.x, candidate.y, candidate.z };
+            ImVec2 projected;
+            if (!camera.Project(DecorationToWorld(decoration), viewport, projected))
+                continue;
+            const float distance = std::hypot(
+                mouse.x - projected.x, mouse.y - projected.y);
+            if (distance < nearest)
+            {
+                nearest = distance;
+                point = decoration;
+                screen = projected;
+                found = true;
+            }
+        }
+        return found;
     }
 
     const MapInfo* FindMapInfo(unsigned mapId)
@@ -1799,6 +1830,7 @@ namespace
                     dragStartAnchor[1],
                     dragStartAnchor[2]
                 };
+                bool snappedToMeasurement = false;
                 if (activeAxis == 4)
                 {
                     const Vec3 startWorld = DecorationToWorld(
@@ -1815,6 +1847,19 @@ namespace
                     target[0] = static_cast<float>(targetDecoration.x);
                     target[1] = static_cast<float>(targetDecoration.y);
                     target[2] = static_cast<float>(targetDecoration.z);
+                    DVec3 snapPoint;
+                    ImVec2 snapScreen;
+                    if (FindMeasurementSnap(
+                        camera, viewport, mouse, snapPoint, snapScreen))
+                    {
+                        target[0] = static_cast<float>(snapPoint.x);
+                        target[1] = static_cast<float>(snapPoint.y);
+                        target[2] = static_cast<float>(snapPoint.z);
+                        draw->AddCircle(snapScreen, 10.0f,
+                            IM_COL32(0, 242, 255, 255), 24, 2.5f);
+                        snappedToMeasurement = true;
+                        status = "Snapped the Layout anchor to a visible ruler point.";
+                    }
                 }
                 else
                 {
@@ -1825,8 +1870,8 @@ namespace
                         pixels * activeDecoUnitsPerPixel;
                 }
                 MoveAnchorTo(target);
-                status =
-                    "Moved the decoration group with the scene manipulator.";
+                if (!snappedToMeasurement)
+                    status = "Moved the decoration group with the scene manipulator.";
             }
         }
         else
